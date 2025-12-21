@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f6f0e6;
+  --panel: #fffaf2;
+  --ink: #1f1a13;
+  --muted: #6f6257;
+  --accent: #0f766e;
+  --accent-strong: #0b4f4b;
+  --accent-soft: #dff3ee;
+  --border: #e4dacd;
+  --ring: rgba(15, 118, 110, 0.25);
+  --shadow: 0 30px 60px -40px rgba(20, 15, 8, 0.55);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-body);
+}
+
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body), sans-serif;
+}
+
+.font-heading {
+  font-family: var(--font-heading), serif;
+}
+
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -18px, 0);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
