@@ -613,13 +613,13 @@ export default function HomePage() {
     }
 
     if (!session.access_token || !session.refresh_token) {
-      setCreateError("Sessao invalida. Saia e entre novamente.");
+      setCreateError("Sessão invalida. Saia e entre novamente.");
       return;
     }
 
     const trimmedName = familyName.trim();
     if (trimmedName.length < 2) {
-      setCreateError("Informe um nome para a familia.");
+      setCreateError("Informe um nome para a família.");
       return;
     }
 
@@ -633,7 +633,7 @@ export default function HomePage() {
       .single();
 
     if (familyError || !family) {
-      setCreateError(familyError?.message ?? "Falha ao criar familia.");
+      setCreateError(familyError?.message ?? "Falha ao criar família.");
       setIsCreatingFamily(false);
       return;
     }
@@ -661,7 +661,7 @@ export default function HomePage() {
     setAccountError(null);
 
     if (!session?.access_token || !activeFamilyId) {
-      setAccountError("Selecione uma familia ativa.");
+      setAccountError("Selecione uma família ativa.");
       return;
     }
 
@@ -705,7 +705,7 @@ export default function HomePage() {
     setCategoryError(null);
 
     if (!session?.access_token || !activeFamilyId) {
-      setCategoryError("Selecione uma familia ativa.");
+      setCategoryError("Selecione uma família ativa.");
       return;
     }
 
@@ -744,7 +744,7 @@ export default function HomePage() {
     setTransactionError(null);
 
     if (!session?.access_token || !activeFamilyId) {
-      setTransactionError("Selecione uma familia ativa.");
+      setTransactionError("Selecione uma família ativa.");
       return;
     }
 
@@ -781,7 +781,7 @@ export default function HomePage() {
       );
       if (!selectedCategory || selectedCategory.category_type !== transactionType) {
         setTransactionError(
-          "Selecione uma categoria valida para o tipo escolhido.",
+          "Selecione uma categoria válida para o tipo escolhido.",
         );
         return;
       }
@@ -791,7 +791,7 @@ export default function HomePage() {
     const amountValue = Number(normalizedAmount);
 
     if (!Number.isFinite(amountValue) || amountValue <= 0) {
-      setTransactionError("Informe um valor valido.");
+      setTransactionError("Informe um valor válido.");
       return;
     }
 
@@ -823,14 +823,14 @@ export default function HomePage() {
       const baseDescription = transactionDescription.trim();
       const outgoingDescription =
         baseDescription.length > 0
-          ? `${baseDescription} (Transferencia para ${
+          ? `${baseDescription} (Transferência para ${
               destinationAccount?.name ?? "conta"
             })`
-          : `Transferencia para ${destinationAccount?.name ?? "conta"}`;
+          : `Transferência para ${destinationAccount?.name ?? "conta"}`;
       const incomingDescription =
         baseDescription.length > 0
-          ? `${baseDescription} (Transferencia de ${originAccount?.name ?? "conta"})`
-          : `Transferencia de ${originAccount?.name ?? "conta"}`;
+          ? `${baseDescription} (Transferência de ${originAccount?.name ?? "conta"})`
+          : `Transferência de ${originAccount?.name ?? "conta"}`;
 
       const { error } = await authedSupabase.from("transactions").insert([
         {
@@ -991,7 +991,7 @@ export default function HomePage() {
   const transactionTypeOptions = [
     { value: "expense", label: "Despesa" },
     { value: "income", label: "Receita" },
-    { value: "transfer", label: "Transferencia" },
+    { value: "transfer", label: "Transferência" },
   ];
   const activeTypeLabel =
     transactionTypeOptions.find((option) => option.value === transactionType)
@@ -1041,7 +1041,7 @@ export default function HomePage() {
       <div className="relative mx-auto min-h-screen w-full max-w-7xl px-6 py-6">
         {isChecking ? (
           <div className="flex flex-1 items-center justify-center text-sm text-[var(--muted)]">
-            Carregando informacoes...
+            Carregando informações...
           </div>
         ) : session ? (
           <div className="grid min-h-[calc(100vh-3rem)] gap-6 lg:grid-cols-[220px_1fr]">
@@ -1062,14 +1062,14 @@ export default function HomePage() {
               <nav className="mt-6 flex flex-1 flex-col gap-1 text-sm text-[var(--muted)]">
                 {[
                   "Dashboard",
-                  "Lancamentos",
+                  "Lançamentos",
                   "Contas",
-                  "Orcamento",
-                  "Relatorios",
+                  "Orçamento",
+                  "Relatórios",
                   "Metas",
-                  "Regras e Automacao",
+                  "Regras e Automação",
                   "Categorias",
-                  "Importacoes",
+                  "Importações",
                 ].map((item) => (
                   <button
                     key={item}
@@ -1086,13 +1086,13 @@ export default function HomePage() {
               </nav>
               <div className="mt-6 rounded-2xl border border-[var(--border)] bg-white p-4">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
-                  Sessao
+                  Sessão
                 </p>
                 <p className="mt-2 truncate text-[10px] font-semibold text-[var(--ink)]">
-                  {session.user.email ?? "usuario"}
+                  {session.user.email ?? "usuário"}
                 </p>
                 <div className="mt-3 flex items-center justify-between text-xs text-[var(--muted)]">
-                  <span>Familia</span>
+                  <span>Família</span>
                   <span className="font-semibold text-[var(--ink)]">
                     {activeMembership?.family?.name ?? "Selecione"}
                   </span>
@@ -1111,20 +1111,20 @@ export default function HomePage() {
                       Dashboard
                     </p>
                     <p className="text-lg font-semibold text-[var(--ink)]">
-                      Visao geral
+                      Visão geral
                     </p>
                     <p className="text-xs text-[var(--muted)]">
-                      Familia: {activeMembership?.family?.name ?? "Selecione"}
+                      Família: {activeMembership?.family?.name ?? "Selecione"}
                     </p>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">
-                      Familia
+                      Família
                     </p>
                     <p className="text-xs font-semibold text-[var(--ink)]">
-                      {activeMembership?.family?.name ?? "Sem familia"}
+                      {activeMembership?.family?.name ?? "Sem família"}
                     </p>
                   </div>
                   <input
@@ -1146,14 +1146,14 @@ export default function HomePage() {
                       !canCreateTransaction ? "opacity-60" : ""
                     }`}
                   >
-                    Novo lancamento
+                    Novo lançamento
                   </button>
                   <button
                     type="button"
                     className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
                     disabled
                   >
-                    Transferencia
+                    Transferência
                   </button>
                   <button
                     type="button"
@@ -1187,19 +1187,19 @@ export default function HomePage() {
                   <div
                     role="dialog"
                     aria-modal="true"
-                    aria-labelledby="novo-lancamento-title"
+                    aria-labelledby="novo-lançamento-title"
                     className="relative z-10 w-full max-w-2xl animate-[modal-in_0.22s_ease-out] overflow-hidden rounded-3xl border border-[var(--border)] bg-white p-6 shadow-[var(--shadow)]"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
-                          Novo lancamento
+                          Novo lançamento
                         </p>
                         <h2
-                          id="novo-lancamento-title"
+                          id="novo-lançamento-title"
                           className="mt-2 text-xl font-semibold text-[var(--ink)]"
                         >
-                          Registrar movimentacao
+                          Registrar movimentação
                         </h2>
                         <p className="mt-1 text-sm text-[var(--muted)]">
                           Preencha os campos abaixo.
@@ -1216,7 +1216,7 @@ export default function HomePage() {
 
                     {!canCreateTransaction ? (
                       <div className="mt-5 rounded-2xl border border-dashed border-[var(--border)] bg-slate-50 px-4 py-4 text-sm text-[var(--muted)]">
-                        Crie ao menos uma conta para liberar os lancamentos.
+                        Crie ao menos uma conta para liberar os lançamentos.
                       </div>
                     ) : (
                       <form
@@ -1425,7 +1425,7 @@ export default function HomePage() {
 
                         <div className="flex flex-col gap-2">
                           <label className="text-xs font-semibold text-[var(--muted)]">
-                            Descricao
+                            Descrição
                           </label>
                           <div className="relative">
                             <svg
@@ -1444,7 +1444,7 @@ export default function HomePage() {
                               onChange={(event) =>
                                 setTransactionDescription(event.target.value)
                               }
-                              placeholder="Descricao (opcional)"
+                              placeholder="Descrição (opcional)"
                               className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                             />
                           </div>
@@ -1485,16 +1485,16 @@ export default function HomePage() {
               {isLoadingMemberships ? (
                 <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
                   <p className="text-sm text-[var(--muted)]">
-                    Carregando familias...
+                    Carregando famílias...
                   </p>
                 </div>
               ) : memberships.length === 0 ? (
                 <section className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
                   <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
-                    Criar familia
+                    Criar família
                   </h2>
                   <p className="mt-3 text-sm text-[var(--muted)]">
-                    Defina o grupo principal para organizar contas, lancamentos
+                    Defina o grupo principal para organizar contas, lançamentos
                     e permissoes.
                   </p>
                   <form
@@ -1504,7 +1504,7 @@ export default function HomePage() {
                     <input
                       value={familyName}
                       onChange={(event) => setFamilyName(event.target.value)}
-                      placeholder="Ex.: Familia Silva"
+                      placeholder="Ex.: Família Silva"
                       className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                     />
                     {createError ? (
@@ -1517,7 +1517,7 @@ export default function HomePage() {
                       disabled={isCreatingFamily}
                       className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
                     >
-                      {isCreatingFamily ? "Criando..." : "Criar familia"}
+                      {isCreatingFamily ? "Criando..." : "Criar família"}
                     </button>
                   </form>
                 </section>
@@ -1532,7 +1532,7 @@ export default function HomePage() {
                         {currencyFormatter.format(monthNet)}
                       </p>
                       <p className="mt-1 text-xs text-emerald-100">
-                        Periodo: {monthLabel}
+                        Período: {monthLabel}
                       </p>
                     </div>
                     <div className="rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 p-4 text-white shadow-sm">
@@ -1543,7 +1543,7 @@ export default function HomePage() {
                         {currencyFormatter.format(monthlySummary.income)}
                       </p>
                       <p className="mt-1 text-xs text-orange-100">
-                        Periodo: {monthLabel}
+                        Período: {monthLabel}
                       </p>
                     </div>
                     <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 p-4 text-white shadow-sm">
@@ -1554,7 +1554,7 @@ export default function HomePage() {
                         {currencyFormatter.format(monthlySummary.expense)}
                       </p>
                       <p className="mt-1 text-xs text-rose-100">
-                        Periodo: {monthLabel}
+                        Período: {monthLabel}
                       </p>
                     </div>
                     <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 p-4 text-white shadow-sm">
@@ -1565,7 +1565,7 @@ export default function HomePage() {
                         {currencyFormatter.format(economy)}
                       </p>
                       <p className="mt-1 text-xs text-sky-100">
-                        Lancamentos: {monthlySummary.count}
+                        Lançamentos: {monthlySummary.count}
                       </p>
                     </div>
                   </section>
@@ -1575,10 +1575,10 @@ export default function HomePage() {
                       <div className="flex flex-wrap items-center justify-between gap-4">
                         <div>
                           <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
-                            Ultimos lancamentos
+                            Ultimos lançamentos
                           </h3>
                           <p className="mt-2 text-sm text-[var(--muted)]">
-                            Periodo selecionado: {monthLabel}
+                            Período selecionado: {monthLabel}
                           </p>
                         </div>
                         {hasActiveFilters ? (
@@ -1655,7 +1655,7 @@ export default function HomePage() {
                                   colSpan={5}
                                   className="py-4 text-sm text-[var(--muted)]"
                                 >
-                                  Carregando lancamentos...
+                                  Carregando lançamentos...
                                 </td>
                               </tr>
                             ) : visibleTransactions.length === 0 ? (
@@ -1664,7 +1664,7 @@ export default function HomePage() {
                                   colSpan={5}
                                   className="py-4 text-sm text-[var(--muted)]"
                                 >
-                                  Nenhum lancamento encontrado.
+                                  Nenhum lançamento encontrado.
                                 </td>
                               </tr>
                             ) : (
@@ -1702,9 +1702,9 @@ export default function HomePage() {
                                         : "text-[var(--ink)]";
                                 const categoryLabel =
                                   transaction.category?.name ??
-                                  (isTransferRow ? "Transferencia" : "Sem categoria");
+                                  (isTransferRow ? "Transferência" : "Sem categoria");
                                 const typeLabel = isTransferRow
-                                  ? "Transferencia"
+                                  ? "Transferência"
                                   : categoryType === "income"
                                     ? "Receita"
                                     : categoryType === "expense"
@@ -1779,10 +1779,10 @@ export default function HomePage() {
                             <span className="mt-1 h-2 w-2 rounded-full bg-rose-500" />
                             <div>
                               <p className="font-semibold">
-                                Orcamento de alimentacao estourado
+                                Orçamento de alimentação estourado
                               </p>
                               <p className="text-xs text-[var(--muted)]">
-                                Revise as despesas do mes.
+                                Revise as despesas do mês.
                               </p>
                             </div>
                           </div>
@@ -1790,7 +1790,7 @@ export default function HomePage() {
                             <span className="mt-1 h-2 w-2 rounded-full bg-amber-500" />
                             <div>
                               <p className="font-semibold">
-                                Fatura do cartao em 5 dias
+                                Fatura do cartão em 5 dias
                               </p>
                               <p className="text-xs text-[var(--muted)]">
                                 Agende o pagamento.
@@ -1802,7 +1802,7 @@ export default function HomePage() {
 
                       <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
                         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
-                          Atalhos rapidos
+                          Atalhos rápidos
                         </h3>
                         <div className="mt-4 flex flex-col gap-3">
                           <button
@@ -1810,7 +1810,7 @@ export default function HomePage() {
                             onClick={openTransactionModal}
                             className="inline-flex items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-500/30 transition hover:bg-[var(--accent-strong)]"
                           >
-                            Lancamento rapido
+                            Lançamento rápido
                           </button>
                           <button
                             type="button"
@@ -1877,10 +1877,10 @@ export default function HomePage() {
 
                       <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
                         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
-                          Familia ativa
+                          Família ativa
                         </h3>
                         <p className="mt-3 text-lg font-semibold text-[var(--ink)]">
-                          {activeMembership?.family?.name ?? "Familia"}
+                          {activeMembership?.family?.name ?? "Família"}
                         </p>
                         <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
                           Papel: {activeMembership?.role ?? "-"}
@@ -1888,7 +1888,7 @@ export default function HomePage() {
                         <div className="mt-4 grid gap-3 sm:grid-cols-2">
                           <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3">
                             <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
-                              Familias
+                              Famílias
                             </p>
                             <p className="mt-1 text-base font-semibold text-[var(--ink)]">
                               {memberships.length}
@@ -1912,7 +1912,7 @@ export default function HomePage() {
                           </div>
                           <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3">
                             <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
-                              Lancamentos
+                              Lançamentos
                             </p>
                             <p className="mt-1 text-base font-semibold text-[var(--ink)]">
                               {transactionsTotal ?? transactions.length}
@@ -1943,7 +1943,7 @@ export default function HomePage() {
                         <div className="flex-1 space-y-3">
                           {topExpenseItems.length === 0 ? (
                             <p className="text-sm text-[var(--muted)]">
-                              Sem despesas no periodo.
+                              Sem despesas no período.
                             </p>
                           ) : (
                             topExpenseItems.map((item, index) => (
@@ -2114,8 +2114,8 @@ export default function HomePage() {
                               className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                             >
                               <option value="checking">Conta corrente</option>
-                              <option value="savings">Poupanca</option>
-                              <option value="credit_card">Cartao</option>
+                              <option value="savings">Poupança</option>
+                              <option value="credit_card">Cartão</option>
                               <option value="cash">Dinheiro</option>
                             </select>
                             <select
@@ -2148,7 +2148,7 @@ export default function HomePage() {
                           Categorias
                         </h2>
                         <p className="mt-3 text-sm text-[var(--muted)]">
-                          Separe entradas e saidas para organizar os relatorios.
+                          Separe entradas e saídas para organizar os relatórios.
                         </p>
                         <div className="mt-4 space-y-3">
                           {isLoadingCategories ? (
@@ -2196,7 +2196,7 @@ export default function HomePage() {
                           >
                             <option value="expense">Despesa</option>
                             <option value="income">Receita</option>
-                            <option value="transfer">Transferencia</option>
+                            <option value="transfer">Transferência</option>
                           </select>
                           {categoryError ? (
                             <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -2225,10 +2225,10 @@ export default function HomePage() {
                 Controle familiar
               </span>
               <h1 className="font-heading text-3xl text-[var(--ink)] sm:text-4xl tracking-tight">
-                Um painel unico para organizar a rotina financeira da familia.
+                Um painel único para organizar a rotina financeira da família.
               </h1>
               <p className="max-w-xl text-base text-[var(--muted)]">
-                Centralize contas, lancamentos e anexos. Automatize entradas via
+                Centralize contas, lançamentos e anexos. Automatize entradas via
                 email e OFX, e mantenha cada pessoa com o acesso certo.
               </p>
               <div className="flex flex-wrap gap-3">
@@ -2244,20 +2244,20 @@ export default function HomePage() {
             <section className="grid gap-4 motion-safe:animate-[fade-up_0.7s_ease-out]">
               {[
                 {
-                  title: "Lancamentos e categorias",
-                  body: "Cadastre entradas e saidas em segundos, com regras claras.",
+                  title: "Lançamentos e categorias",
+                  body: "Cadastre entradas e saídas em segundos, com regras claras.",
                 },
                 {
                   title: "Permissoes por membro",
                   body: "Cada pessoa ve apenas as contas que importam.",
                 },
                 {
-                  title: "Automacoes e bots",
+                  title: "Automações e bots",
                   body: "Email, n8n e chat para lancar sem abrir o app.",
                 },
                 {
-                  title: "Relatorios vivos",
-                  body: "Visao por periodo, conta e categoria em tempo real.",
+                  title: "Relatórios vivos",
+                  body: "Visão por período, conta e categoria em tempo real.",
                 },
               ].map((item) => (
                 <div

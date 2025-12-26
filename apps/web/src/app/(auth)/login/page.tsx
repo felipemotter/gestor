@@ -46,7 +46,7 @@ export default function LoginPage() {
           Area segura
         </p>
         <h2 className="font-heading text-3xl text-[var(--ink)]">
-          Acesse sua familia
+          Acesse sua família
         </h2>
         <p className="text-sm text-[var(--muted)]">
           Use seu email e senha para entrar no painel.

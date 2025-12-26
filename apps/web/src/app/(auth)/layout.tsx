@@ -14,29 +14,29 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           </span>
           <div className="space-y-4">
             <h1 className="font-heading text-3xl leading-tight text-[var(--ink)] sm:text-4xl tracking-tight">
-              Controle financeiro da familia sem complicacao.
+              Controle financeiro da família sem complicação.
             </h1>
             <p className="max-w-xl text-base leading-relaxed text-[var(--muted)]">
-              Centralize lancamentos, contas e categorias em um unico lugar. Use
-              regras, automacoes e relatatorios para manter tudo organizado.
+              Centralize lançamentos, contas e categorias em um único lugar. Use
+              regras, automações e relatatorios para manter tudo organizado.
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {[
               {
-                title: "Lancamentos rapidos",
-                body: "Registro manual simples e importacao de extratos.",
+                title: "Lançamentos rápidos",
+                body: "Registro manual simples e importação de extratos.",
               },
               {
                 title: "Permissoes por pessoa",
                 body: "Cada membro ve apenas o que precisa.",
               },
               {
-                title: "Relatorios claros",
-                body: "Visao por periodo, conta e categoria.",
+                title: "Relatórios claros",
+                body: "Visão por período, conta e categoria.",
               },
               {
-                title: "Automacoes",
+                title: "Automações",
                 body: "Email, regras e chat para agilizar o fluxo.",
               },
             ].map((item) => (

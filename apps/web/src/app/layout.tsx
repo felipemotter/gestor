@@ -16,7 +16,7 @@ const headingFont = Sora({
 
 export const metadata: Metadata = {
   title: "Projeto Dindin",
-  description: "Controle financeiro familiar com Supabase e automacoes.",
+  description: "Controle financeiro familiar com Supabase e automações.",
 };
 
 export default function RootLayout({

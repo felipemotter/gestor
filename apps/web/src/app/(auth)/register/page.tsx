@@ -54,7 +54,7 @@ export default function RegisterPage() {
       return;
     }
 
-    setInfo("Conta criada. Se o email exigir confirmacao, finalize o acesso.");
+    setInfo("Conta criada. Se o email exigir confirmação, finalize o acesso.");
     setIsSubmitting(false);
   };
 
@@ -68,7 +68,7 @@ export default function RegisterPage() {
           Crie sua conta
         </h2>
         <p className="text-sm text-[var(--muted)]">
-          Use um email valido e uma senha forte para iniciar.
+          Use um email válido e uma senha forte para iniciar.
         </p>
       </div>
 
