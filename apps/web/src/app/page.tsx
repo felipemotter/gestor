@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getAuthedSupabaseClient, getSupabaseClient } from "@/lib/supabase/client";
 
@@ -82,10 +82,16 @@ export default function HomePage() {
       description: string | null;
       posted_at: string;
       created_at: string;
+      source: string | null;
+      external_id: string | null;
       account: { id: string; name: string } | null;
       category: { id: string; name: string; category_type: string } | null;
     }>
   >([]);
+  const [accountBalances, setAccountBalances] = useState<Record<string, number>>(
+    {},
+  );
+  const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [transactionsLimit, setTransactionsLimit] = useState(8);
   const [transactionsTotal, setTransactionsTotal] = useState<number | null>(null);
@@ -104,7 +110,10 @@ export default function HomePage() {
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [transactionAccountId, setTransactionAccountId] = useState("");
+  const [transactionDestinationAccountId, setTransactionDestinationAccountId] =
+    useState("");
   const [transactionCategoryId, setTransactionCategoryId] = useState("");
+  const [transactionType, setTransactionType] = useState("expense");
   const [transactionAmount, setTransactionAmount] = useState("");
   const [transactionDescription, setTransactionDescription] = useState("");
   const [transactionDate, setTransactionDate] = useState(() => {
@@ -113,6 +122,7 @@ export default function HomePage() {
   });
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [filterAccountId, setFilterAccountId] = useState("");
   const [filterCategoryId, setFilterCategoryId] = useState("");
   const [filterStartDate, setFilterStartDate] = useState("");
@@ -147,10 +157,11 @@ export default function HomePage() {
   const loadMemberships = async (userId: string, accessToken: string) => {
     setIsLoadingMemberships(true);
     const authedSupabase = getAuthedSupabaseClient(accessToken);
-    const { data, error } = await authedSupabase
-      .from("memberships")
-      .select("id, role, family:families ( id, name, created_at )")
-      .eq("user_id", userId);
+  const { data, error } = await authedSupabase
+    .from("memberships")
+    .select("id, role, family:families ( id, name, created_at )")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
 
     if (error) {
       setMemberships([]);
@@ -224,7 +235,7 @@ export default function HomePage() {
     let query = authedSupabase
       .from("transactions")
       .select(
-        "id, amount, description, posted_at, created_at, account:accounts(id, name), category:categories(id, name, category_type)",
+        "id, amount, description, posted_at, created_at, source, external_id, account:accounts(id, name), category:categories(id, name, category_type)",
         { count: "exact" },
       )
       .in("account_id", accountIds)
@@ -264,6 +275,8 @@ export default function HomePage() {
         description: item.description,
         posted_at: item.posted_at,
         created_at: item.created_at,
+        source: item.source,
+        external_id: item.external_id,
         account: item.account
           ? { id: item.account.id, name: item.account.name }
           : null,
@@ -326,6 +339,75 @@ export default function HomePage() {
     setMonthlySummary({ income, expense, count: data?.length ?? 0 });
   };
 
+  const loadAccountBalances = async (
+    accountIds: string[],
+    accessToken: string,
+    range?: { startDate?: string; endDate?: string },
+  ) => {
+    if (accountIds.length === 0) {
+      setAccountBalances({});
+      return;
+    }
+
+    setIsLoadingBalances(true);
+    const fallback = getMonthRange(new Date().toISOString().slice(0, 7));
+    const startDate = range?.startDate || fallback.startDate;
+    const endDate = range?.endDate || fallback.endDate;
+    const authedSupabase = getAuthedSupabaseClient(accessToken);
+    let query = authedSupabase
+      .from("transactions")
+      .select("account_id, amount, source, category:categories(category_type)");
+
+    if (accountIds.length > 0) {
+      query = query.in("account_id", accountIds);
+    }
+
+    if (startDate) {
+      query = query.gte("posted_at", startDate);
+    }
+
+    if (endDate) {
+      query = query.lte("posted_at", endDate);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      setAccountBalances({});
+      setIsLoadingBalances(false);
+      return;
+    }
+
+    const balances = accountIds.reduce<Record<string, number>>((acc, id) => {
+      acc[id] = 0;
+      return acc;
+    }, {});
+
+    (data ?? []).forEach((item) => {
+      const amountValue = Number(item.amount);
+      if (!Number.isFinite(amountValue)) {
+        return;
+      }
+
+      let delta = 0;
+      if (item.source === "transfer") {
+        delta = amountValue;
+      } else if (item.category?.category_type === "income") {
+        delta = amountValue;
+      } else if (item.category?.category_type === "expense") {
+        delta = -amountValue;
+      }
+
+      const accountId = item.account_id as string;
+      if (accountId && accountId in balances) {
+        balances[accountId] += delta;
+      }
+    });
+
+    setAccountBalances(balances);
+    setIsLoadingBalances(false);
+  };
+
   useEffect(() => {
     if (!session?.user.id) {
       setMemberships([]);
@@ -346,28 +428,10 @@ export default function HomePage() {
       return;
     }
 
-    const familyIds = memberships
-      .map((membership) => membership.family?.id)
-      .filter((id): id is string => Boolean(id));
-
-    setActiveFamilyId((current) => {
-      if (current && familyIds.includes(current)) {
-        return current;
-      }
-
-      const stored =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem("dindin.activeFamilyId")
-          : null;
-      const next =
-        (stored && familyIds.includes(stored) ? stored : null) ?? familyIds[0];
-
-      if (next && typeof window !== "undefined") {
-        window.localStorage.setItem("dindin.activeFamilyId", next);
-      }
-
-      return next ?? null;
-    });
+    const nextFamilyId = memberships[0]?.family?.id ?? null;
+    setActiveFamilyId((current) =>
+      current === nextFamilyId ? current : nextFamilyId,
+    );
   }, [memberships]);
 
   useEffect(() => {
@@ -423,6 +487,14 @@ export default function HomePage() {
         endDate: filterEndDate || undefined,
       },
     );
+    loadAccountBalances(
+      accounts.map((account) => account.id),
+      session.access_token,
+      {
+        startDate: filterStartDate || undefined,
+        endDate: filterEndDate || undefined,
+      },
+    );
   }, [
     accounts,
     activeFamilyId,
@@ -441,6 +513,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!activeFamilyId) {
       setTransactionAccountId("");
+      setTransactionDestinationAccountId("");
       setTransactionCategoryId("");
       setFilterAccountId("");
       setFilterCategoryId("");
@@ -463,6 +536,19 @@ export default function HomePage() {
       setTransactionAccountId("");
     }
 
+    if (
+      transactionDestinationAccountId &&
+      !accounts.some((account) => account.id === transactionDestinationAccountId)
+    ) {
+      setTransactionDestinationAccountId("");
+    }
+    if (
+      transactionDestinationAccountId &&
+      transactionDestinationAccountId === transactionAccountId
+    ) {
+      setTransactionDestinationAccountId("");
+    }
+
     if (!categories.some((category) => category.id === transactionCategoryId)) {
       setTransactionCategoryId("");
     }
@@ -479,6 +565,7 @@ export default function HomePage() {
     categories,
     activeFamilyId,
     transactionAccountId,
+    transactionDestinationAccountId,
     transactionCategoryId,
     filterAccountId,
     filterCategoryId,
@@ -488,10 +575,19 @@ export default function HomePage() {
   ]);
 
   useEffect(() => {
-    if (activeFamilyId && typeof window !== "undefined") {
-      window.localStorage.setItem("dindin.activeFamilyId", activeFamilyId);
+    if (!isTransactionModalOpen) {
+      return;
     }
-  }, [activeFamilyId]);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsTransactionModalOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isTransactionModalOpen]);
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
@@ -499,8 +595,12 @@ export default function HomePage() {
     setIsSigningOut(false);
   };
 
-  const handleFamilyChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    setActiveFamilyId(event.target.value);
+  const openTransactionModal = () => {
+    setTransactionError(null);
+    setTransactionDestinationAccountId("");
+    setTransactionCategoryId("");
+    setTransactionType("expense");
+    setIsTransactionModalOpen(true);
   };
 
   const handleCreateFamily = async (event: FormEvent<HTMLFormElement>) => {
@@ -653,9 +753,38 @@ export default function HomePage() {
       return;
     }
 
-    if (!transactionCategoryId) {
-      setTransactionError("Selecione a categoria.");
+    if (!transactionType) {
+      setTransactionError("Selecione o tipo.");
       return;
+    }
+
+    if (isTransfer) {
+      if (!transactionDestinationAccountId) {
+        setTransactionError("Selecione a conta destino.");
+        return;
+      }
+
+      if (transactionDestinationAccountId === transactionAccountId) {
+        setTransactionError("A conta destino deve ser diferente.");
+        return;
+      }
+    }
+
+    if (!isTransfer) {
+      if (!transactionCategoryId) {
+        setTransactionError("Selecione a categoria.");
+        return;
+      }
+
+      const selectedCategory = categories.find(
+        (category) => category.id === transactionCategoryId,
+      );
+      if (!selectedCategory || selectedCategory.category_type !== transactionType) {
+        setTransactionError(
+          "Selecione uma categoria valida para o tipo escolhido.",
+        );
+        return;
+      }
     }
 
     const normalizedAmount = transactionAmount.replace(",", ".").trim();
@@ -671,11 +800,65 @@ export default function HomePage() {
       return;
     }
 
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as
+      | HTMLButtonElement
+      | null;
+    const submitAction = submitter?.dataset.action ?? "close";
+
     setIsCreatingTransaction(true);
     const authedSupabase = getAuthedSupabaseClient(session.access_token);
-    const { error: insertError } = await authedSupabase
-      .from("transactions")
-      .insert({
+    let insertError: { message: string } | null = null;
+
+    if (isTransfer) {
+      const transferId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const originAccount = accounts.find(
+        (account) => account.id === transactionAccountId,
+      );
+      const destinationAccount = accounts.find(
+        (account) => account.id === transactionDestinationAccountId,
+      );
+      const baseDescription = transactionDescription.trim();
+      const outgoingDescription =
+        baseDescription.length > 0
+          ? `${baseDescription} (Transferencia para ${
+              destinationAccount?.name ?? "conta"
+            })`
+          : `Transferencia para ${destinationAccount?.name ?? "conta"}`;
+      const incomingDescription =
+        baseDescription.length > 0
+          ? `${baseDescription} (Transferencia de ${originAccount?.name ?? "conta"})`
+          : `Transferencia de ${originAccount?.name ?? "conta"}`;
+
+      const { error } = await authedSupabase.from("transactions").insert([
+        {
+          account_id: transactionAccountId,
+          category_id: null,
+          amount: -amountValue,
+          currency: "BRL",
+          description: outgoingDescription,
+          posted_at: transactionDate,
+          source: "transfer",
+          external_id: transferId,
+        },
+        {
+          account_id: transactionDestinationAccountId,
+          category_id: null,
+          amount: amountValue,
+          currency: "BRL",
+          description: incomingDescription,
+          posted_at: transactionDate,
+          source: "transfer",
+          external_id: transferId,
+        },
+      ]);
+      if (error) {
+        insertError = error;
+      }
+    } else {
+      const { error } = await authedSupabase.from("transactions").insert({
         account_id: transactionAccountId,
         category_id: transactionCategoryId,
         amount: amountValue,
@@ -683,6 +866,10 @@ export default function HomePage() {
         description: transactionDescription.trim() || null,
         posted_at: transactionDate,
       });
+      if (error) {
+        insertError = error;
+      }
+    }
 
     if (insertError) {
       setTransactionError(insertError.message);
@@ -704,12 +891,16 @@ export default function HomePage() {
       },
     );
     setIsCreatingTransaction(false);
+    if (submitAction === "repeat") {
+      return;
+    }
+    setIsTransactionModalOpen(false);
   };
 
   const activeMembership = memberships.find(
     (membership) => membership.family?.id === activeFamilyId,
   );
-  const canCreateTransaction = accounts.length > 0 && categories.length > 0;
+  const canCreateTransaction = accounts.length > 0;
   const monthNet = monthlySummary.income - monthlySummary.expense;
   const economy = Math.max(monthNet, 0);
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -721,6 +912,7 @@ export default function HomePage() {
           transaction.account?.name,
           transaction.amount,
           transaction.posted_at,
+          transaction.source,
         ]
           .filter(Boolean)
           .join(" ")
@@ -791,6 +983,53 @@ export default function HomePage() {
     expenseTotal > 0 && donutSlices
       ? `conic-gradient(${donutSlices})`
       : "conic-gradient(#e2e8f0 0deg, #e2e8f0 360deg)";
+  const isTransfer = transactionType === "transfer";
+  const filteredCategories =
+    transactionType && !isTransfer
+      ? categories.filter((category) => category.category_type === transactionType)
+      : [];
+  const transactionTypeOptions = [
+    { value: "expense", label: "Despesa" },
+    { value: "income", label: "Receita" },
+    { value: "transfer", label: "Transferencia" },
+  ];
+  const activeTypeLabel =
+    transactionTypeOptions.find((option) => option.value === transactionType)
+      ?.label ?? "tipo";
+  const hasCategoryOptions = filteredCategories.length > 0;
+  const categorySelectDisabled =
+    !transactionType || isTransfer || !hasCategoryOptions;
+  const categoryPlaceholder = transactionType
+    ? hasCategoryOptions
+      ? "Selecione a categoria"
+      : "Sem categorias"
+    : "Selecione o tipo";
+  const transactionTypeStyles: Record<
+    string,
+    { active: string; inactive: string }
+  > = {
+    expense: {
+      active: "bg-rose-500 text-white shadow-sm",
+      inactive: "text-[var(--muted)] hover:text-[var(--ink)]",
+    },
+    income: {
+      active: "bg-emerald-500 text-white shadow-sm",
+      inactive: "text-[var(--muted)] hover:text-[var(--ink)]",
+    },
+    transfer: {
+      active: "bg-sky-500 text-white shadow-sm",
+      inactive: "text-[var(--muted)] hover:text-[var(--ink)]",
+    },
+  };
+  const destinationAccounts = accounts.filter(
+    (account) => account.id !== transactionAccountId,
+  );
+  const destinationPlaceholder =
+    destinationAccounts.length > 0
+      ? "Selecione a conta destino"
+      : "Crie outra conta";
+  const destinationSelectDisabled =
+    destinationAccounts.length === 0 || !transactionAccountId;
 
   return (
     <div className="relative min-h-screen overflow-hidden text-[var(--ink)]">
@@ -849,7 +1088,7 @@ export default function HomePage() {
                 <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   Sessao
                 </p>
-                <p className="mt-2 text-sm font-semibold text-[var(--ink)]">
+                <p className="mt-2 truncate text-[10px] font-semibold text-[var(--ink)]">
                   {session.user.email ?? "usuario"}
                 </p>
                 <div className="mt-3 flex items-center justify-between text-xs text-[var(--muted)]">
@@ -880,25 +1119,14 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <select
-                    value={activeFamilyId ?? ""}
-                    onChange={handleFamilyChange}
-                    disabled={memberships.length === 0}
-                    className="min-w-[180px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {memberships.length === 0 ? (
-                      <option value="">Crie uma familia</option>
-                    ) : (
-                      memberships.map((membership) => (
-                        <option
-                          key={membership.id}
-                          value={membership.family?.id ?? ""}
-                        >
-                          {membership.family?.name ?? "Familia"}
-                        </option>
-                      ))
-                    )}
-                  </select>
+                  <div className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">
+                      Familia
+                    </p>
+                    <p className="text-xs font-semibold text-[var(--ink)]">
+                      {activeMembership?.family?.name ?? "Sem familia"}
+                    </p>
+                  </div>
                   <input
                     type="month"
                     value={activeMonth}
@@ -911,14 +1139,15 @@ export default function HomePage() {
                     placeholder="Buscar..."
                     className="min-w-[200px] rounded-xl border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                   />
-                  <a
-                    href="#novo-lancamento"
+                  <button
+                    type="button"
+                    onClick={openTransactionModal}
                     className={`inline-flex items-center justify-center rounded-full bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-500/30 transition hover:bg-[var(--accent-strong)] ${
-                      !canCreateTransaction ? "pointer-events-none opacity-60" : ""
+                      !canCreateTransaction ? "opacity-60" : ""
                     }`}
                   >
                     Novo lancamento
-                  </a>
+                  </button>
                   <button
                     type="button"
                     className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
@@ -946,6 +1175,312 @@ export default function HomePage() {
                   </button>
                 </div>
               </header>
+
+              {isTransactionModalOpen ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+                  <button
+                    type="button"
+                    aria-label="Fechar modal"
+                    onClick={() => setIsTransactionModalOpen(false)}
+                    className="absolute inset-0 animate-[overlay-in_0.2s_ease-out] bg-slate-900/40 backdrop-blur-sm"
+                  />
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="novo-lancamento-title"
+                    className="relative z-10 w-full max-w-2xl animate-[modal-in_0.22s_ease-out] overflow-hidden rounded-3xl border border-[var(--border)] bg-white p-6 shadow-[var(--shadow)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                          Novo lancamento
+                        </p>
+                        <h2
+                          id="novo-lancamento-title"
+                          className="mt-2 text-xl font-semibold text-[var(--ink)]"
+                        >
+                          Registrar movimentacao
+                        </h2>
+                        <p className="mt-1 text-sm text-[var(--muted)]">
+                          Preencha os campos abaixo.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsTransactionModalOpen(false)}
+                        className="rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+
+                    {!canCreateTransaction ? (
+                      <div className="mt-5 rounded-2xl border border-dashed border-[var(--border)] bg-slate-50 px-4 py-4 text-sm text-[var(--muted)]">
+                        Crie ao menos uma conta para liberar os lancamentos.
+                      </div>
+                    ) : (
+                      <form
+                        className="mt-6 grid gap-6"
+                        onSubmit={handleCreateTransaction}
+                      >
+                        <div className="flex flex-col gap-2">
+                          <label className="text-xs font-semibold text-[var(--muted)]">
+                            Tipo
+                          </label>
+                          <div
+                            role="group"
+                            className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
+                          >
+                            {transactionTypeOptions.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setTransactionType(option.value);
+                                  setTransactionDestinationAccountId("");
+                                  setTransactionCategoryId("");
+                                }}
+                                className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
+                                  transactionType === option.value
+                                    ? (transactionTypeStyles[option.value]?.active ??
+                                      "bg-white text-[var(--accent-strong)] shadow-sm")
+                                    : (transactionTypeStyles[option.value]?.inactive ??
+                                      "text-[var(--muted)] hover:text-[var(--ink)]")
+                                }`}
+                                aria-pressed={transactionType === option.value}
+                              >
+                                <span className="block truncate">
+                                  {option.label}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="flex flex-col gap-2">
+                            <label className="text-xs font-semibold text-[var(--muted)]">
+                              {isTransfer ? "Conta origem" : "Conta"}
+                            </label>
+                            <div className="relative">
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                              >
+                                <rect x="3" y="6" width="18" height="12" rx="2" />
+                                <path d="M3 10h18" />
+                              </svg>
+                              <select
+                                value={transactionAccountId}
+                                onChange={(event) =>
+                                  setTransactionAccountId(event.target.value)
+                                }
+                                className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                              >
+                                <option value="">Selecione a conta</option>
+                                {accounts.map((account) => (
+                                  <option key={account.id} value={account.id}>
+                                    {account.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          {isTransfer ? (
+                            <div className="flex flex-col gap-2">
+                              <label className="text-xs font-semibold text-[var(--muted)]">
+                                Conta destino
+                              </label>
+                              <div className="relative">
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 24 24"
+                                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                >
+                                  <path d="M4 12h12" />
+                                  <path d="M12 6l6 6-6 6" />
+                                </svg>
+                                <select
+                                  value={transactionDestinationAccountId}
+                                  onChange={(event) =>
+                                    setTransactionDestinationAccountId(event.target.value)
+                                  }
+                                  disabled={destinationSelectDisabled}
+                                  className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
+                                >
+                                  <option value="">{destinationPlaceholder}</option>
+                                  {destinationAccounts.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {account.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              <label className="text-xs font-semibold text-[var(--muted)]">
+                                Categoria
+                              </label>
+                              <div className="relative">
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 24 24"
+                                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                >
+                                  <path d="M7 7h7l5 5-7 7-5-5V7z" />
+                                  <circle cx="10" cy="10" r="1.2" />
+                                </svg>
+                                <select
+                                  value={transactionCategoryId}
+                                  onChange={(event) =>
+                                    setTransactionCategoryId(event.target.value)
+                                  }
+                                  disabled={categorySelectDisabled}
+                                  className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
+                                >
+                                  <option value="">{categoryPlaceholder}</option>
+                                  {filteredCategories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                      {category.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              {transactionType && !hasCategoryOptions ? (
+                                <p className="text-xs text-amber-600">
+                                  Crie uma categoria de {activeTypeLabel} antes
+                                  de registrar.
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="flex flex-col gap-2">
+                            <label className="text-xs font-semibold text-[var(--muted)]">
+                              Valor
+                            </label>
+                            <div className="relative">
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                              >
+                                <circle cx="12" cy="12" r="8" />
+                                <path d="M9 10h6M9 14h6" />
+                              </svg>
+                              <input
+                                value={transactionAmount}
+                                onChange={(event) =>
+                                  setTransactionAmount(event.target.value)
+                                }
+                                placeholder="R$ 0,00"
+                                inputMode="decimal"
+                                className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <label className="text-xs font-semibold text-[var(--muted)]">
+                              Data
+                            </label>
+                            <div className="relative">
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                              >
+                                <rect x="3" y="5" width="18" height="16" rx="2" />
+                                <path d="M16 3v4M8 3v4M3 11h18" />
+                              </svg>
+                              <input
+                                type="date"
+                                value={transactionDate}
+                                onChange={(event) =>
+                                  setTransactionDate(event.target.value)
+                                }
+                                className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <label className="text-xs font-semibold text-[var(--muted)]">
+                            Descricao
+                          </label>
+                          <div className="relative">
+                            <svg
+                              aria-hidden="true"
+                              viewBox="0 0 24 24"
+                              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                            >
+                              <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+                              <path d="M14 3v6h6" />
+                            </svg>
+                            <input
+                              value={transactionDescription}
+                              onChange={(event) =>
+                                setTransactionDescription(event.target.value)
+                              }
+                              placeholder="Descricao (opcional)"
+                              className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                            />
+                          </div>
+                        </div>
+                        {transactionError ? (
+                          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            {transactionError}
+                          </div>
+                        ) : null}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <button
+                            type="submit"
+                            data-action="close"
+                            disabled={isCreatingTransaction}
+                            className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
+                          >
+                            {isCreatingTransaction
+                              ? "Salvando..."
+                              : "Salvar e fechar"}
+                          </button>
+                          <button
+                            type="submit"
+                            data-action="repeat"
+                            disabled={isCreatingTransaction}
+                            className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {isCreatingTransaction
+                              ? "Salvando..."
+                              : "Salvar e criar outro"}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              ) : null}
 
               {isLoadingMemberships ? (
                 <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
@@ -1103,6 +1638,9 @@ export default function HomePage() {
                                 Categoria
                               </th>
                               <th className="py-2 text-left font-semibold">
+                                Tipo
+                              </th>
+                              <th className="py-2 text-left font-semibold">
                                 Conta
                               </th>
                               <th className="py-2 text-right font-semibold">
@@ -1114,7 +1652,7 @@ export default function HomePage() {
                             {isLoadingTransactions ? (
                               <tr>
                                 <td
-                                  colSpan={4}
+                                  colSpan={5}
                                   className="py-4 text-sm text-[var(--muted)]"
                                 >
                                   Carregando lancamentos...
@@ -1123,7 +1661,7 @@ export default function HomePage() {
                             ) : visibleTransactions.length === 0 ? (
                               <tr>
                                 <td
-                                  colSpan={4}
+                                  colSpan={5}
                                   className="py-4 text-sm text-[var(--muted)]"
                                 >
                                   Nenhum lancamento encontrado.
@@ -1131,24 +1669,47 @@ export default function HomePage() {
                               </tr>
                             ) : (
                               visibleTransactions.map((transaction) => {
+                                const isTransferRow = transaction.source === "transfer";
                                 const rawValue = Number(transaction.amount);
-                                const formattedValue = Number.isFinite(rawValue)
-                                  ? currencyFormatter.format(rawValue)
+                                const isNumeric = Number.isFinite(rawValue);
+                                const displayValue =
+                                  isTransferRow && isNumeric
+                                    ? Math.abs(rawValue)
+                                    : rawValue;
+                                const formattedValue = isNumeric
+                                  ? currencyFormatter.format(displayValue)
                                   : transaction.amount;
                                 const categoryType =
                                   transaction.category?.category_type;
-                                const sign =
-                                  categoryType === "income"
+                                const sign = isTransferRow
+                                  ? rawValue < 0
+                                    ? "-"
+                                    : "+"
+                                  : categoryType === "income"
                                     ? "+"
                                     : categoryType === "expense"
                                       ? "-"
                                       : "";
                                 const valueTone =
-                                  categoryType === "expense"
-                                    ? "text-rose-600"
-                                    : categoryType === "income"
-                                      ? "text-emerald-600"
-                                      : "text-[var(--ink)]";
+                                  isTransferRow
+                                    ? rawValue < 0
+                                      ? "text-rose-600"
+                                      : "text-emerald-600"
+                                    : categoryType === "expense"
+                                      ? "text-rose-600"
+                                      : categoryType === "income"
+                                        ? "text-emerald-600"
+                                        : "text-[var(--ink)]";
+                                const categoryLabel =
+                                  transaction.category?.name ??
+                                  (isTransferRow ? "Transferencia" : "Sem categoria");
+                                const typeLabel = isTransferRow
+                                  ? "Transferencia"
+                                  : categoryType === "income"
+                                    ? "Receita"
+                                    : categoryType === "expense"
+                                      ? "Despesa"
+                                      : "Outro";
 
                                 return (
                                   <tr
@@ -1159,7 +1720,10 @@ export default function HomePage() {
                                       {formatDate(transaction.posted_at)}
                                     </td>
                                     <td className="py-3 text-sm text-[var(--ink)]">
-                                      {transaction.category?.name ?? "Categoria"}
+                                      {categoryLabel}
+                                    </td>
+                                    <td className="py-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                                      {typeLabel}
                                     </td>
                                     <td className="py-3 text-sm text-[var(--muted)]">
                                       {transaction.account?.name ?? "Conta"}
@@ -1241,12 +1805,13 @@ export default function HomePage() {
                           Atalhos rapidos
                         </h3>
                         <div className="mt-4 flex flex-col gap-3">
-                          <a
-                            href="#novo-lancamento"
+                          <button
+                            type="button"
+                            onClick={openTransactionModal}
                             className="inline-flex items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-500/30 transition hover:bg-[var(--accent-strong)]"
                           >
                             Lancamento rapido
-                          </a>
+                          </button>
                           <button
                             type="button"
                             className="inline-flex items-center justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
@@ -1261,6 +1826,52 @@ export default function HomePage() {
                           >
                             Importar extrato
                           </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                            Saldo por conta
+                          </h3>
+                          <span className="text-xs font-semibold text-[var(--muted)]">
+                            {monthLabel}
+                          </span>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {isLoadingBalances ? (
+                            <p className="text-sm text-[var(--muted)]">
+                              Calculando saldos...
+                            </p>
+                          ) : accounts.length === 0 ? (
+                            <p className="text-sm text-[var(--muted)]">
+                              Nenhuma conta criada ainda.
+                            </p>
+                          ) : (
+                            accounts.map((account) => {
+                              const balance = accountBalances[account.id] ?? 0;
+                              const tone =
+                                balance < 0 ? "text-rose-600" : "text-emerald-600";
+                              return (
+                                <div
+                                  key={account.id}
+                                  className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-white px-4 py-3 text-sm"
+                                >
+                                  <div>
+                                    <p className="font-semibold text-[var(--ink)]">
+                                      {account.name}
+                                    </p>
+                                    <p className="text-xs text-[var(--muted)]">
+                                      {account.account_type.replace("_", " ")}
+                                    </p>
+                                  </div>
+                                  <span className={`text-sm font-semibold ${tone}`}>
+                                    {currencyFormatter.format(balance)}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          )}
                         </div>
                       </div>
 
@@ -1397,109 +2008,6 @@ export default function HomePage() {
                     </div>
                   </section>
 
-                  <section
-                    id="novo-lancamento"
-                    className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
-                          Novo lancamento
-                        </h2>
-                        <p className="mt-2 text-sm text-[var(--muted)]">
-                          Registre entradas e saidas com conta e categoria.
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
-                        {activeMembership?.family?.name ?? "Familia ativa"}
-                      </span>
-                    </div>
-
-                    {!canCreateTransaction ? (
-                      <div className="mt-4 rounded-2xl border border-dashed border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
-                        Crie ao menos uma conta e uma categoria para liberar os
-                        lancamentos.
-                      </div>
-                    ) : (
-                      <form
-                        className="mt-4 grid gap-3"
-                        onSubmit={handleCreateTransaction}
-                      >
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <select
-                            value={transactionAccountId}
-                            onChange={(event) =>
-                              setTransactionAccountId(event.target.value)
-                            }
-                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                          >
-                            <option value="">Selecione a conta</option>
-                            {accounts.map((account) => (
-                              <option key={account.id} value={account.id}>
-                                {account.name}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            value={transactionCategoryId}
-                            onChange={(event) =>
-                              setTransactionCategoryId(event.target.value)
-                            }
-                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                          >
-                            <option value="">Selecione a categoria</option>
-                            {categories.map((category) => (
-                              <option key={category.id} value={category.id}>
-                                {category.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          <input
-                            value={transactionAmount}
-                            onChange={(event) =>
-                              setTransactionAmount(event.target.value)
-                            }
-                            placeholder="Valor"
-                            inputMode="decimal"
-                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                          />
-                          <input
-                            type="date"
-                            value={transactionDate}
-                            onChange={(event) =>
-                              setTransactionDate(event.target.value)
-                            }
-                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                          />
-                          <input
-                            value={transactionDescription}
-                            onChange={(event) =>
-                              setTransactionDescription(event.target.value)
-                            }
-                            placeholder="Descricao (opcional)"
-                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                          />
-                        </div>
-                        {transactionError ? (
-                          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                            {transactionError}
-                          </div>
-                        ) : null}
-                        <button
-                          type="submit"
-                          disabled={isCreatingTransaction}
-                          className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
-                        >
-                          {isCreatingTransaction
-                            ? "Salvando..."
-                            : "Registrar lancamento"}
-                        </button>
-                      </form>
-                    )}
-                  </section>
-
                   <details
                     className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm"
                     open={accounts.length === 0 || categories.length === 0}
@@ -1539,6 +2047,48 @@ export default function HomePage() {
                                     ? "Compartilhada"
                                     : "Privada"}
                                 </p>
+                                <div
+                                  className={`mt-3 flex items-center gap-2 text-sm font-semibold ${
+                                    (accountBalances[account.id] ?? 0) < 0
+                                      ? "text-rose-600"
+                                      : "text-emerald-600"
+                                  }`}
+                                >
+                                  {(accountBalances[account.id] ?? 0) < 0 ? (
+                                    <svg
+                                      aria-hidden="true"
+                                      viewBox="0 0 24 24"
+                                      className="h-4 w-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <path d="M12 19V5" />
+                                      <path d="M18 13l-6 6-6-6" />
+                                    </svg>
+                                  ) : (
+                                    <svg
+                                      aria-hidden="true"
+                                      viewBox="0 0 24 24"
+                                      className="h-4 w-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <path d="M12 5v14" />
+                                      <path d="M18 11l-6-6-6 6" />
+                                    </svg>
+                                  )}
+                                  <span>
+                                    {currencyFormatter.format(
+                                      accountBalances[account.id] ?? 0,
+                                    )}
+                                  </span>
+                                </div>
                               </div>
                             ))
                           )}

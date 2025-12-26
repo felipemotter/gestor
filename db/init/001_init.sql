@@ -82,6 +82,9 @@ create table if not exists public.memberships (
   unique (family_id, user_id)
 );
 
+create unique index if not exists memberships_user_id_key
+  on public.memberships (user_id);
+
 create table if not exists public.accounts (
   id uuid primary key default gen_random_uuid(),
   family_id uuid not null references public.families(id) on delete cascade,
@@ -247,6 +250,21 @@ as $$
   );
 $$;
 
+create or replace function public.has_membership()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+set row_security = off
+as $$
+  select exists (
+    select 1
+    from public.memberships m
+    where m.user_id = auth.uid()
+  );
+$$;
+
 alter table public.families enable row level security;
 
 create policy families_select on public.families
@@ -258,7 +276,10 @@ create policy families_select on public.families
 
 create policy families_insert on public.families
   for insert
-  with check ((select auth.uid()) is not null);
+  with check (
+    (select auth.uid()) is not null
+    and not (select public.has_membership())
+  );
 
 create policy families_update on public.families
   for update
