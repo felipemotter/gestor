@@ -31,6 +31,11 @@ body {
   font-family: var(--font-body), sans-serif;
 }
 
+button:enabled,
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
 .font-heading {
   font-family: var(--font-heading), serif;
 }
