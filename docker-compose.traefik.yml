@@ -1,0 +1,87 @@
+services:
+  traefik:
+    image: traefik:v2.11
+    container_name: gestor-traefik
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=public"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=felipe@trentoquimica.com.br"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-letsencrypt:/letsencrypt
+    networks:
+      - public
+
+  web:
+    ports: []
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gestor-web.rule=Host(`gestor.felipemotter.com.br`)"
+      - "traefik.http.routers.gestor-web.entrypoints=websecure"
+      - "traefik.http.routers.gestor-web.tls.certresolver=le"
+      - "traefik.http.services.gestor-web.loadbalancer.server.port=3000"
+    networks:
+      - default
+      - public
+
+  kong:
+    ports: []
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gestor-api.rule=Host(`api.gestor.felipemotter.com.br`)"
+      - "traefik.http.routers.gestor-api.entrypoints=websecure"
+      - "traefik.http.routers.gestor-api.tls.certresolver=le"
+      - "traefik.http.services.gestor-api.loadbalancer.server.port=8000"
+    networks:
+      - default
+      - public
+
+  auth:
+    ports: []
+
+  rest:
+    ports: []
+
+  realtime:
+    ports: []
+
+  storage:
+    ports: []
+
+  imgproxy:
+    ports: []
+
+  meta:
+    ports: []
+
+  studio:
+    ports: []
+
+  n8n:
+    ports: []
+
+  ofx:
+    ports: []
+
+  db:
+    ports: []
+
+networks:
+  public:
+    name: gestor-public
+
+volumes:
+  traefik-letsencrypt:

@@ -56,6 +56,10 @@ Fase 5 (Telegram + IA)
 
 Veja o passo a passo em `SETUP.md`.
 
+## Deploy (VPS + Traefik)
+
+Veja o passo a passo em `DEPLOY.md`.
+
 ## URLs locais
 
 - Web app: http://localhost:3000

@@ -78,6 +78,22 @@ docker compose up -d web
 docker compose logs -f
 ```
 
+## Ambientes (dev vs prod)
+
+- Dev local: use `.env` e `docker-compose.yml`.
+- Prod (VPS): use `.env.prod` + `docker-compose.prod.yml` + `docker-compose.traefik.yml`.
+
+Exemplo:
+
+```bash
+docker compose \
+  --env-file .env.prod \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.traefik.yml \
+  up -d
+```
+
 ## Problemas comuns
 
 - Erro `schema "auth" does not exist`: pare os containers e remova o volume para o Postgres inicializar com os scripts do Supabase.
