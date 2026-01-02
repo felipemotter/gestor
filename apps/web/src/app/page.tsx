@@ -41,6 +41,7 @@ export default function HomePage() {
   const [isChecking, setIsChecking] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<
     "dashboard" | "transactions" | "transfers"
   >("dashboard");
@@ -1685,17 +1686,175 @@ export default function HomePage() {
               }`}
             >
               <header className="rounded-3xl border border-[var(--border)] bg-white/80 px-5 py-4 shadow-sm backdrop-blur">
-                <div className="relative flex flex-wrap items-center gap-3 lg:flex-nowrap">
-                  <div className="order-1 flex min-w-0 items-center gap-3 lg:order-none">
-                    <div className="flex h-10 w-[160px] items-center justify-center rounded-xl px-1 lg:hidden">
+                <div className="relative flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:gap-3 lg:flex-nowrap">
+                  <div className="flex w-full items-center justify-between gap-3 lg:order-none lg:justify-start">
+                    <button
+                      type="button"
+                      onClick={() => setIsMobileMenuOpen(true)}
+                      aria-label="Abrir menu"
+                      className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-white text-[var(--muted)] shadow-sm transition hover:text-[var(--accent-strong)] lg:hidden"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M4 6h16" />
+                        <path d="M4 12h16" />
+                        <path d="M4 18h16" />
+                      </svg>
+                    </button>
+                    <div className="flex h-10 flex-1 items-center justify-center rounded-xl px-1 lg:hidden">
                       <img
                         src="/logo_gestor.png"
                         alt="Gestor"
-                        className="h-8 w-full object-contain"
+                        className="h-8 w-full max-w-[140px] object-contain"
                       />
                     </div>
+                    <div className="lg:hidden">
+                      <div ref={monthPickerRef} className="relative">
+                        <button
+                          type="button"
+                          aria-haspopup="dialog"
+                          aria-expanded={isMonthPickerOpen}
+                          onClick={() => {
+                            setMonthPickerYear(activeYear);
+                            setIsMonthPickerOpen((prev) => !prev);
+                          }}
+                          className="flex h-10 items-center gap-2 rounded-full border border-[var(--border)] bg-white px-3 text-[11px] font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
+                        >
+                          <span>{activeMonthLabel}</span>
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className="h-4 w-4 text-[var(--muted)]"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        </button>
+                        {isMonthPickerOpen ? (
+                          <div className="absolute left-1/2 top-full z-30 mt-2 w-64 -translate-x-1/2 rounded-2xl border border-[var(--border)] bg-white p-3 shadow-[var(--shadow)]">
+                            <div className="flex items-center justify-between px-2 py-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMonthPickerYear((prev) => prev - 1)
+                                }
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--accent)]"
+                                aria-label="Ano anterior"
+                              >
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 24 24"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M15 18l-6-6 6-6" />
+                                </svg>
+                              </button>
+                              <span className="text-sm font-semibold text-[var(--ink)]">
+                                {monthPickerYear}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMonthPickerYear((prev) => prev + 1)
+                                }
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--accent)]"
+                                aria-label="Próximo ano"
+                              >
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 24 24"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M9 6l6 6-6 6" />
+                                </svg>
+                              </button>
+                            </div>
+                            <div className="mt-2 grid grid-cols-3 gap-2">
+                              {monthNames.map((monthName, index) => {
+                                const isActive =
+                                  index === activeMonthIndex &&
+                                  monthPickerYear === activeYear;
+                                return (
+                                  <button
+                                    key={`${monthName}-mobile`}
+                                    type="button"
+                                    onClick={() => handleSelectMonth(index)}
+                                    className={`rounded-xl px-2 py-2 text-xs font-semibold transition ${
+                                      isActive
+                                        ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                                        : "text-[var(--ink)] hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    {monthName}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-3 grid grid-cols-3 gap-2">
+                              {[
+                                {
+                                  label: `${monthNames[prevMonth.index]} ${prevMonth.year}`,
+                                  value: prevMonth,
+                                },
+                                {
+                                  label: `${monthNames[activeMonthIndex]} ${activeYear}`,
+                                  value: { year: activeYear, index: activeMonthIndex },
+                                },
+                                {
+                                  label: `${monthNames[nextMonth.index]} ${nextMonth.year}`,
+                                  value: nextMonth,
+                                },
+                              ].map((item, idx) => {
+                                const isCurrent = idx === 1;
+                                return (
+                                  <button
+                                    key={`${item.label}-mobile`}
+                                    type="button"
+                                    onClick={() =>
+                                      handleSelectMonth(
+                                        item.value.index,
+                                        item.value.year,
+                                      )
+                                    }
+                                    className={`rounded-full border px-2 py-2 text-[11px] font-semibold transition ${
+                                      isCurrent
+                                        ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                                        : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                                    }`}
+                                  >
+                                    {item.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
-                  <div className="order-2 flex w-full justify-center lg:absolute lg:left-1/2 lg:top-1/2 lg:w-auto lg:-translate-x-1/2 lg:-translate-y-1/2">
+                  <div className="hidden w-full justify-center lg:absolute lg:left-1/2 lg:top-1/2 lg:flex lg:w-auto lg:-translate-x-1/2 lg:-translate-y-1/2">
                     <div ref={monthPickerRef} className="relative">
                       <button
                         type="button"
@@ -1832,16 +1991,16 @@ export default function HomePage() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="order-3 flex flex-wrap items-center gap-2 lg:ml-auto">
-                    <div className="flex h-11 items-center gap-1 rounded-full border border-[var(--border)] bg-white px-1 py-1 shadow-sm">
-                      <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                  <div className="flex w-full flex-nowrap items-center justify-center gap-2 lg:ml-auto lg:w-auto">
+                    <div className="flex h-10 items-center gap-1 rounded-full border border-[var(--border)] bg-white px-1 py-1 shadow-sm sm:h-11">
+                      <span className="px-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)] sm:px-2 sm:text-[10px]">
                         Criar
                       </span>
                       <button
                         type="button"
                         onClick={() => openTransactionModal("expense")}
                         disabled={!canCreateTransaction}
-                        className="inline-flex h-9 items-center justify-center rounded-full bg-rose-500 px-3 text-xs font-semibold text-white shadow-sm shadow-rose-500/30 transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex h-8 items-center justify-center rounded-full bg-rose-500 px-2 text-[11px] font-semibold text-white shadow-sm shadow-rose-500/30 transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60 sm:h-9 sm:px-3 sm:text-xs"
                       >
                         Despesa
                       </button>
@@ -1849,7 +2008,7 @@ export default function HomePage() {
                         type="button"
                         onClick={() => openTransactionModal("income")}
                         disabled={!canCreateTransaction}
-                        className="inline-flex h-9 items-center justify-center rounded-full bg-emerald-500 px-3 text-xs font-semibold text-white shadow-sm shadow-emerald-500/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex h-8 items-center justify-center rounded-full bg-emerald-500 px-2 text-[11px] font-semibold text-white shadow-sm shadow-emerald-500/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60 sm:h-9 sm:px-3 sm:text-xs"
                       >
                         Receita
                       </button>
@@ -1857,14 +2016,14 @@ export default function HomePage() {
                         type="button"
                         onClick={() => openTransactionModal("transfer")}
                         disabled={!canCreateTransaction}
-                        className="inline-flex h-9 items-center justify-center rounded-full bg-sky-500 px-3 text-xs font-semibold text-white shadow-sm shadow-sky-500/30 transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex h-8 items-center justify-center rounded-full bg-sky-500 px-2 text-[11px] font-semibold text-white shadow-sm shadow-sky-500/30 transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60 sm:h-9 sm:px-3 sm:text-xs"
                       >
                         Transferência
                       </button>
                     </div>
                     <button
                       type="button"
-                      className="inline-flex h-11 items-center justify-center rounded-full border border-[var(--border)] bg-white px-4 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
+                      className="inline-flex h-10 items-center justify-center rounded-full border border-[var(--border)] bg-white px-3 text-[11px] font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] sm:h-11 sm:px-4 sm:text-xs"
                       disabled
                     >
                       Importar
@@ -1872,6 +2031,106 @@ export default function HomePage() {
                   </div>
                 </div>
               </header>
+              {isMobileMenuOpen ? (
+                <div className="fixed inset-0 z-50 lg:hidden">
+                  <button
+                    type="button"
+                    aria-label="Fechar menu"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                  />
+                  <div className="relative z-10 h-full w-[260px] max-w-[85vw] overflow-y-auto rounded-r-3xl border-r border-[var(--border)] bg-white/95 p-5 shadow-[var(--shadow)]">
+                    <div className="flex items-center justify-between">
+                      <img
+                        src="/logo_gestor.png"
+                        alt="Gestor"
+                        className="h-9 w-auto object-contain"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        aria-label="Fechar menu"
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:text-[var(--accent-strong)]"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M18 6L6 18" />
+                          <path d="M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <nav className="mt-6 flex flex-col gap-1 text-sm text-[var(--muted)]">
+                      {navItems.map((item) => {
+                        const isActive = item.view === activeView;
+                        const isEnabled = Boolean(item.view);
+                        return (
+                          <button
+                            key={item.label}
+                            type="button"
+                            disabled={!isEnabled}
+                            onClick={() => {
+                              if (item.view) {
+                                setActiveView(item.view);
+                                setIsMobileMenuOpen(false);
+                              }
+                            }}
+                            className={`flex items-center gap-3 rounded-xl px-3 py-2 text-left font-semibold transition ${
+                              isActive
+                                ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                                : isEnabled
+                                  ? "hover:bg-slate-50"
+                                  : "opacity-50"
+                            }`}
+                          >
+                            {item.icon({ className: "h-5 w-5" })}
+                            <span>{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                    <div className="mt-6 rounded-2xl border border-[var(--border)] bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+                        <span>Família</span>
+                        <span className="ml-2 truncate font-semibold text-[var(--ink)]">
+                          {activeMembership?.family?.name ?? "Selecione"}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-white text-xs font-semibold text-[var(--ink)]">
+                          {userInitial}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                            Sessão
+                          </p>
+                          <p
+                            className="truncate text-[11px] font-semibold text-[var(--ink)]"
+                            title={session.user.email ?? "usuário"}
+                          >
+                            {session.user.email ?? "usuário"}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        disabled={isSigningOut}
+                        className="mt-3 inline-flex h-8 w-full items-center justify-center rounded-full border border-[var(--border)] bg-white text-xs font-semibold text-[var(--ink)] transition hover:border-[var(--accent)]"
+                      >
+                        {isSigningOut ? "Saindo..." : "Sair"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {isTransactionModalOpen ? (
                 <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
