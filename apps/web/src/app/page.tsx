@@ -18,6 +18,23 @@ const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
   month: "2-digit",
 });
+const calendarDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+const toLocalDateInputValue = (date: Date) => {
+  const offset = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+};
+const parseLocalDateInput = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) {
+    return new Date();
+  }
+  return new Date(year, month - 1, day);
+};
+const calendarWeekdays = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 
 const typeFilterAll = ["expense", "income", "transfer"] as const;
 
@@ -123,10 +140,22 @@ export default function HomePage() {
   const [transactionType, setTransactionType] = useState("expense");
   const [transactionAmount, setTransactionAmount] = useState("");
   const [transactionDescription, setTransactionDescription] = useState("");
-  const [transactionDate, setTransactionDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().slice(0, 10);
-  });
+  const [transactionDate, setTransactionDate] = useState(() =>
+    toLocalDateInputValue(new Date()),
+  );
+  const [datePreset, setDatePreset] = useState<
+    "today" | "yesterday" | "custom"
+  >("today");
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calendarTempDate, setCalendarTempDate] = useState(() =>
+    toLocalDateInputValue(new Date()),
+  );
+  const [calendarMonth, setCalendarMonth] = useState(() =>
+    new Date().getMonth(),
+  );
+  const [calendarYear, setCalendarYear] = useState(() =>
+    new Date().getFullYear(),
+  );
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
@@ -173,6 +202,22 @@ export default function HomePage() {
       subscription.unsubscribe();
     };
   }, [supabase]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+    const shouldLockScroll = isTransactionModalOpen || isMobileMenuOpen;
+    if (!shouldLockScroll) {
+      return undefined;
+    }
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, [isTransactionModalOpen, isMobileMenuOpen]);
 
   useEffect(() => {
     if (!isMonthPickerOpen) {
@@ -673,12 +718,22 @@ export default function HomePage() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (isCalendarOpen) {
+          setIsCalendarOpen(false);
+          return;
+        }
         setIsTransactionModalOpen(false);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isTransactionModalOpen, isCalendarOpen]);
+
+  useEffect(() => {
+    if (!isTransactionModalOpen) {
+      setIsCalendarOpen(false);
+    }
   }, [isTransactionModalOpen]);
 
   const handleSignOut = async () => {
@@ -692,6 +747,10 @@ export default function HomePage() {
     setTransactionDestinationAccountId("");
     setTransactionCategoryId("");
     setTransactionType(nextType);
+    setDatePreset("today");
+    const today = toLocalDateInputValue(new Date());
+    setTransactionDate(today);
+    setCalendarTempDate(today);
     setIsTransactionModalOpen(true);
   };
 
@@ -746,6 +805,34 @@ export default function HomePage() {
     setActiveFamilyId(family.id);
     await loadMemberships(session.user.id, session.access_token);
     setIsCreatingFamily(false);
+  };
+
+  const applyDatePreset = (preset: "today" | "yesterday" | "custom") => {
+    setDatePreset(preset);
+    if (preset === "custom") {
+      const customDate = parseLocalDateInput(transactionDate);
+      setCalendarMonth(customDate.getMonth());
+      setCalendarYear(customDate.getFullYear());
+      setCalendarTempDate(transactionDate);
+      setIsCalendarOpen(true);
+      return;
+    }
+    const baseDate = new Date();
+    if (preset === "yesterday") {
+      baseDate.setDate(baseDate.getDate() - 1);
+    }
+    const nextDate = toLocalDateInputValue(baseDate);
+    setTransactionDate(nextDate);
+    setCalendarTempDate(nextDate);
+    setIsCalendarOpen(false);
+  };
+
+  const openCalendarPicker = () => {
+    const customDate = parseLocalDateInput(transactionDate);
+    setCalendarMonth(customDate.getMonth());
+    setCalendarYear(customDate.getFullYear());
+    setCalendarTempDate(transactionDate);
+    setIsCalendarOpen(true);
   };
 
   const handleCreateAccount = async (event: FormEvent<HTMLFormElement>) => {
@@ -1294,6 +1381,29 @@ export default function HomePage() {
     "Novembro",
     "Dezembro",
   ];
+  const selectedDate = parseLocalDateInput(transactionDate);
+  const selectedDateLabel = calendarDateFormatter
+    .format(selectedDate)
+    .replace(".", "")
+    .toUpperCase();
+  const calendarSelectedDate = parseLocalDateInput(calendarTempDate);
+  const calendarSelectedLabel = calendarDateFormatter
+    .format(calendarSelectedDate)
+    .replace(".", "")
+    .toUpperCase();
+  const calendarLabel = `${monthNamesFull[calendarMonth]} ${calendarYear}`;
+  const firstWeekday = new Date(calendarYear, calendarMonth, 1).getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const calendarDays: Array<number | null> = [];
+  for (let idx = 0; idx < firstWeekday; idx += 1) {
+    calendarDays.push(null);
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    calendarDays.push(day);
+  }
+  while (calendarDays.length % 7 !== 0) {
+    calendarDays.push(null);
+  }
   const activeMonthParts = activeMonth.split("-").map(Number);
   const fallbackDate = new Date();
   const activeYear = Number.isFinite(activeMonthParts[0])
@@ -1993,7 +2103,7 @@ export default function HomePage() {
               ) : null}
 
               {isTransactionModalOpen ? (
-                <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+                <div className="fixed inset-0 z-50 flex items-start justify-center px-3 py-4 sm:items-center sm:px-4 sm:py-6">
                   <button
                     type="button"
                     aria-label="Fechar modal"
@@ -2004,112 +2114,98 @@ export default function HomePage() {
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="novo-lançamento-title"
-                    className="relative z-10 w-full max-w-2xl animate-[modal-in_0.22s_ease-out] overflow-hidden rounded-3xl border border-[var(--border)] bg-white p-6 shadow-[var(--shadow)]"
+                    className={`relative z-10 flex w-full max-w-2xl animate-[modal-in_0.22s_ease-out] flex-col overflow-hidden rounded-2xl border bg-white sm:rounded-3xl ${
+                      isCalendarOpen
+                        ? "border-transparent shadow-none"
+                        : "border-[var(--border)] shadow-[var(--shadow)]"
+                    }`}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                    <div className="flex items-start justify-between gap-2 border-b border-[var(--border)] px-4 py-3 sm:border-none sm:px-6 sm:pt-6 sm:pb-0">
+                      <div className="min-w-0">
+                        <p className="hidden text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)] sm:block">
                           Novo lançamento
                         </p>
                         <h2
                           id="novo-lançamento-title"
-                          className="mt-2 text-xl font-semibold text-[var(--ink)]"
+                          className="mt-0.5 text-base font-semibold text-[var(--ink)] sm:mt-2 sm:text-xl"
                         >
                           Registrar movimentação
                         </h2>
-                        <p className="mt-1 text-sm text-[var(--muted)]">
+                        <p className="mt-1 hidden text-sm text-[var(--muted)] sm:block">
                           Preencha os campos abaixo.
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => setIsTransactionModalOpen(false)}
-                        className="rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-white text-[var(--muted)] shadow-sm transition hover:border-[var(--accent)] hover:text-[var(--ink)] sm:h-auto sm:w-auto sm:px-4 sm:py-2 sm:text-xs sm:font-semibold sm:text-[var(--ink)]"
+                        aria-label="Fechar"
                       >
-                        Fechar
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4 sm:mr-2"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M18 6L6 18" />
+                          <path d="M6 6l12 12" />
+                        </svg>
+                        <span className="hidden sm:inline">Fechar</span>
                       </button>
                     </div>
 
-                    {!canCreateTransaction ? (
-                      <div className="mt-5 rounded-2xl border border-dashed border-[var(--border)] bg-slate-50 px-4 py-4 text-sm text-[var(--muted)]">
-                        Crie ao menos uma conta para liberar os lançamentos.
-                      </div>
-                    ) : (
-                      <form
-                        className="mt-6 grid gap-6"
-                        onSubmit={handleCreateTransaction}
-                      >
-                        <div className="flex flex-col gap-2">
-                          <label className="text-xs font-semibold text-[var(--muted)]">
-                            Tipo
-                          </label>
-                          <div
-                            role="group"
-                            className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
-                          >
-                            {transactionTypeOptions.map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => {
-                                  setTransactionType(option.value);
-                                  setTransactionDestinationAccountId("");
-                                  setTransactionCategoryId("");
-                                }}
-                                className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
-                                  transactionType === option.value
-                                    ? (transactionTypeStyles[option.value]?.active ??
-                                      "bg-white text-[var(--accent-strong)] shadow-sm")
-                                    : (transactionTypeStyles[option.value]?.inactive ??
-                                      "text-[var(--muted)] hover:text-[var(--ink)]")
-                                }`}
-                                aria-pressed={transactionType === option.value}
-                              >
-                                <span className="block truncate">
-                                  {option.label}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
+                    <div className="max-h-[calc(100vh-10rem)] flex-1 overflow-y-auto px-5 py-4 sm:max-h-[calc(100vh-16rem)] sm:px-6 sm:py-6">
+                      {!canCreateTransaction ? (
+                        <div className="rounded-2xl border border-dashed border-[var(--border)] bg-slate-50 px-4 py-4 text-sm text-[var(--muted)]">
+                          Crie ao menos uma conta para liberar os lançamentos.
                         </div>
-
-                        <div className="grid gap-4 sm:grid-cols-2">
+                      ) : (
+                        <form
+                          className="grid gap-5 sm:gap-6"
+                          onSubmit={handleCreateTransaction}
+                        >
                           <div className="flex flex-col gap-2">
                             <label className="text-xs font-semibold text-[var(--muted)]">
-                              {isTransfer ? "Conta origem" : "Conta"}
+                              Tipo
                             </label>
-                            <div className="relative">
-                              <svg
-                                aria-hidden="true"
-                                viewBox="0 0 24 24"
-                                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                              >
-                                <rect x="3" y="6" width="18" height="12" rx="2" />
-                                <path d="M3 10h18" />
-                              </svg>
-                              <select
-                                value={transactionAccountId}
-                                onChange={(event) =>
-                                  setTransactionAccountId(event.target.value)
-                                }
-                                className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                              >
-                                <option value="">Selecione a conta</option>
-                                {accounts.map((account) => (
-                                  <option key={account.id} value={account.id}>
-                                    {account.name}
-                                  </option>
-                                ))}
-                              </select>
+                            <div
+                              role="group"
+                              className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
+                            >
+                              {transactionTypeOptions.map((option) => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => {
+                                    setTransactionType(option.value);
+                                    setTransactionDestinationAccountId("");
+                                    setTransactionCategoryId("");
+                                  }}
+                                  className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
+                                    transactionType === option.value
+                                      ? (transactionTypeStyles[option.value]?.active ??
+                                        "bg-white text-[var(--accent-strong)] shadow-sm")
+                                      : (transactionTypeStyles[option.value]?.inactive ??
+                                        "text-[var(--muted)] hover:text-[var(--ink)]")
+                                  }`}
+                                  aria-pressed={transactionType === option.value}
+                                >
+                                  <span className="block truncate">
+                                    {option.label}
+                                  </span>
+                                </button>
+                              ))}
                             </div>
                           </div>
-                          {isTransfer ? (
+
+                          <div className="grid gap-4 sm:grid-cols-2">
                             <div className="flex flex-col gap-2">
                               <label className="text-xs font-semibold text-[var(--muted)]">
-                                Conta destino
+                                {isTransfer ? "Conta origem" : "Conta"}
                               </label>
                               <div className="relative">
                                 <svg
@@ -2120,19 +2216,18 @@ export default function HomePage() {
                                   stroke="currentColor"
                                   strokeWidth="1.5"
                                 >
-                                  <path d="M4 12h12" />
-                                  <path d="M12 6l6 6-6 6" />
+                                  <rect x="3" y="6" width="18" height="12" rx="2" />
+                                  <path d="M3 10h18" />
                                 </svg>
                                 <select
-                                  value={transactionDestinationAccountId}
+                                  value={transactionAccountId}
                                   onChange={(event) =>
-                                    setTransactionDestinationAccountId(event.target.value)
+                                    setTransactionAccountId(event.target.value)
                                   }
-                                  disabled={destinationSelectDisabled}
-                                  className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
+                                  className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                                 >
-                                  <option value="">{destinationPlaceholder}</option>
-                                  {destinationAccounts.map((account) => (
+                                  <option value="">Selecione a conta</option>
+                                  {accounts.map((account) => (
                                     <option key={account.id} value={account.id}>
                                       {account.name}
                                     </option>
@@ -2140,10 +2235,89 @@ export default function HomePage() {
                                 </select>
                               </div>
                             </div>
-                          ) : (
+                            {isTransfer ? (
+                              <div className="flex flex-col gap-2">
+                                <label className="text-xs font-semibold text-[var(--muted)]">
+                                  Conta destino
+                                </label>
+                                <div className="relative">
+                                  <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                  >
+                                    <path d="M4 12h12" />
+                                    <path d="M12 6l6 6-6 6" />
+                                  </svg>
+                                  <select
+                                    value={transactionDestinationAccountId}
+                                    onChange={(event) =>
+                                      setTransactionDestinationAccountId(
+                                        event.target.value,
+                                      )
+                                    }
+                                    disabled={destinationSelectDisabled}
+                                    className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
+                                  >
+                                    <option value="">{destinationPlaceholder}</option>
+                                    {destinationAccounts.map((account) => (
+                                      <option key={account.id} value={account.id}>
+                                        {account.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                <label className="text-xs font-semibold text-[var(--muted)]">
+                                  Categoria
+                                </label>
+                                <div className="relative">
+                                  <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                  >
+                                    <path d="M7 7h7l5 5-7 7-5-5V7z" />
+                                    <circle cx="10" cy="10" r="1.2" />
+                                  </svg>
+                                  <select
+                                    value={transactionCategoryId}
+                                    onChange={(event) =>
+                                      setTransactionCategoryId(event.target.value)
+                                    }
+                                    disabled={categorySelectDisabled}
+                                    className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
+                                  >
+                                    <option value="">{categoryPlaceholder}</option>
+                                    {filteredCategories.map((category) => (
+                                      <option key={category.id} value={category.id}>
+                                        {category.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                {transactionType && !hasCategoryOptions ? (
+                                  <p className="text-xs text-amber-600">
+                                    Crie uma categoria de {activeTypeLabel} antes
+                                    de registrar.
+                                  </p>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid gap-4 sm:grid-cols-2">
                             <div className="flex flex-col gap-2">
                               <label className="text-xs font-semibold text-[var(--muted)]">
-                                Categoria
+                                Valor
                               </label>
                               <div className="relative">
                                 <svg
@@ -2154,39 +2328,78 @@ export default function HomePage() {
                                   stroke="currentColor"
                                   strokeWidth="1.5"
                                 >
-                                  <path d="M7 7h7l5 5-7 7-5-5V7z" />
-                                  <circle cx="10" cy="10" r="1.2" />
+                                  <circle cx="12" cy="12" r="8" />
+                                  <path d="M9 10h6M9 14h6" />
                                 </svg>
-                                <select
-                                  value={transactionCategoryId}
+                                <input
+                                  value={transactionAmount}
                                   onChange={(event) =>
-                                    setTransactionCategoryId(event.target.value)
+                                    setTransactionAmount(event.target.value)
                                   }
-                                  disabled={categorySelectDisabled}
-                                  className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
-                                >
-                                  <option value="">{categoryPlaceholder}</option>
-                                  {filteredCategories.map((category) => (
-                                    <option key={category.id} value={category.id}>
-                                      {category.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  placeholder="R$ 0,00"
+                                  inputMode="decimal"
+                                  className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                                />
                               </div>
-                              {transactionType && !hasCategoryOptions ? (
-                                <p className="text-xs text-amber-600">
-                                  Crie uma categoria de {activeTypeLabel} antes
-                                  de registrar.
-                                </p>
-                              ) : null}
                             </div>
-                          )}
-                        </div>
+                            <div className="flex flex-col gap-2">
+                              <label className="text-xs font-semibold text-[var(--muted)]">
+                                Data
+                              </label>
+                              <div className="grid gap-2">
+                                <div
+                                  role="group"
+                                  className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
+                                >
+                                  {[
+                                    { label: "Hoje", value: "today" as const },
+                                    { label: "Ontem", value: "yesterday" as const },
+                                    { label: "Outros", value: "custom" as const },
+                                  ].map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => applyDatePreset(option.value)}
+                                      className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
+                                        datePreset === option.value
+                                          ? "bg-white text-[var(--accent-strong)] shadow-sm"
+                                          : "text-[var(--muted)] hover:text-[var(--ink)]"
+                                      }`}
+                                      aria-pressed={datePreset === option.value}
+                                    >
+                                      <span className="block truncate">
+                                        {option.label}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                                {datePreset === "custom" ? (
+                                  <button
+                                    type="button"
+                                    onClick={openCalendarPicker}
+                                    className="flex w-full items-center justify-between rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
+                                  >
+                                    <span>{selectedDateLabel}</span>
+                                    <svg
+                                      aria-hidden="true"
+                                      viewBox="0 0 24 24"
+                                      className="h-4 w-4 text-[var(--muted)]"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="1.5"
+                                    >
+                                      <rect x="3" y="5" width="18" height="16" rx="2" />
+                                      <path d="M16 3v4M8 3v4M3 11h18" />
+                                    </svg>
+                                  </button>
+                                ) : null}
+                            </div>
+                          </div>
+                          </div>
 
-                        <div className="grid gap-4 sm:grid-cols-2">
                           <div className="flex flex-col gap-2">
                             <label className="text-xs font-semibold text-[var(--muted)]">
-                              Valor
+                              Descrição
                             </label>
                             <div className="relative">
                               <svg
@@ -2197,103 +2410,184 @@ export default function HomePage() {
                                 stroke="currentColor"
                                 strokeWidth="1.5"
                               >
-                                <circle cx="12" cy="12" r="8" />
-                                <path d="M9 10h6M9 14h6" />
+                                <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+                                <path d="M14 3v6h6" />
                               </svg>
                               <input
-                                value={transactionAmount}
+                                value={transactionDescription}
                                 onChange={(event) =>
-                                  setTransactionAmount(event.target.value)
+                                  setTransactionDescription(event.target.value)
                                 }
-                                placeholder="R$ 0,00"
-                                inputMode="decimal"
+                                placeholder="Descrição (opcional)"
                                 className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                               />
                             </div>
                           </div>
-                          <div className="flex flex-col gap-2">
-                            <label className="text-xs font-semibold text-[var(--muted)]">
-                              Data
-                            </label>
-                            <div className="relative">
-                              <svg
-                                aria-hidden="true"
-                                viewBox="0 0 24 24"
-                                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                              >
-                                <rect x="3" y="5" width="18" height="16" rx="2" />
-                                <path d="M16 3v4M8 3v4M3 11h18" />
-                              </svg>
-                              <input
-                                type="date"
-                                value={transactionDate}
-                                onChange={(event) =>
-                                  setTransactionDate(event.target.value)
-                                }
-                                className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                              />
+                          {transactionError ? (
+                            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                              {transactionError}
                             </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                          <label className="text-xs font-semibold text-[var(--muted)]">
-                            Descrição
-                          </label>
-                          <div className="relative">
-                            <svg
-                              aria-hidden="true"
-                              viewBox="0 0 24 24"
-                              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
+                          ) : null}
+                          <div className="grid gap-3 grid-cols-2">
+                            <button
+                              type="submit"
+                              data-action="close"
+                              disabled={isCreatingTransaction}
+                              className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
                             >
-                              <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
-                              <path d="M14 3v6h6" />
-                            </svg>
-                            <input
-                              value={transactionDescription}
-                              onChange={(event) =>
-                                setTransactionDescription(event.target.value)
-                              }
-                              placeholder="Descrição (opcional)"
-                              className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                            />
+                              {isCreatingTransaction
+                                ? "Salvando..."
+                                : "Salvar e fechar"}
+                            </button>
+                            <button
+                              type="submit"
+                              data-action="repeat"
+                              disabled={isCreatingTransaction}
+                              className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {isCreatingTransaction
+                                ? "Salvando..."
+                                : "Salvar e criar outro"}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                    {isCalendarOpen ? (
+                      <div className="absolute inset-0 z-20 flex items-center justify-center">
+                        <button
+                          type="button"
+                          aria-label="Fechar calendário"
+                          onClick={() => setIsCalendarOpen(false)}
+                          className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                        />
+                        <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-3xl border border-[var(--border)] bg-white shadow-[var(--shadow)]">
+                          <div className="bg-[var(--accent)] px-5 py-4 text-white">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                              {calendarYear}
+                            </p>
+                            <p className="mt-1 text-lg font-semibold">
+                              {calendarSelectedLabel}
+                            </p>
+                          </div>
+                          <div className="px-5 py-4">
+                            <div className="flex items-center justify-between">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (calendarMonth === 0) {
+                                    setCalendarMonth(11);
+                                    setCalendarYear((prev) => prev - 1);
+                                  } else {
+                                    setCalendarMonth((prev) => prev - 1);
+                                  }
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--accent)]"
+                                aria-label="Mês anterior"
+                              >
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 24 24"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M15 18l-6-6 6-6" />
+                                </svg>
+                              </button>
+                              <span className="text-sm font-semibold text-[var(--ink)]">
+                                {calendarLabel}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (calendarMonth === 11) {
+                                    setCalendarMonth(0);
+                                    setCalendarYear((prev) => prev + 1);
+                                  } else {
+                                    setCalendarMonth((prev) => prev + 1);
+                                  }
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--accent)]"
+                                aria-label="Próximo mês"
+                              >
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 24 24"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M9 6l6 6-6 6" />
+                                </svg>
+                              </button>
+                            </div>
+                            <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-[var(--muted)]">
+                              {calendarWeekdays.map((weekday) => (
+                                <span key={weekday}>{weekday}</span>
+                              ))}
+                            </div>
+                            <div className="mt-2 grid grid-cols-7 gap-1 text-center text-sm">
+                              {calendarDays.map((day, index) => {
+                                if (!day) {
+                                  return <span key={`empty-${index}`} />;
+                                }
+                                const isSelected =
+                                  day === calendarSelectedDate.getDate() &&
+                                  calendarMonth === calendarSelectedDate.getMonth() &&
+                                  calendarYear === calendarSelectedDate.getFullYear();
+                                return (
+                                  <button
+                                    key={`${calendarYear}-${calendarMonth}-${day}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setCalendarTempDate(
+                                        toLocalDateInputValue(
+                                          new Date(calendarYear, calendarMonth, day),
+                                        ),
+                                      );
+                                    }}
+                                    className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition ${
+                                      isSelected
+                                        ? "bg-[var(--accent)] text-white"
+                                        : "text-[var(--ink)] hover:bg-slate-100"
+                                    }`}
+                                  >
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-4 flex items-center justify-between">
+                              <button
+                                type="button"
+                                onClick={() => setIsCalendarOpen(false)}
+                                className="text-xs font-semibold text-[var(--muted)] transition hover:text-[var(--ink)]"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTransactionDate(calendarTempDate);
+                                  setDatePreset("custom");
+                                  setIsCalendarOpen(false);
+                                }}
+                                className="text-xs font-semibold text-[var(--accent-strong)] transition hover:text-[var(--accent)]"
+                              >
+                                OK
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        {transactionError ? (
-                          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                            {transactionError}
-                          </div>
-                        ) : null}
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <button
-                            type="submit"
-                            data-action="close"
-                            disabled={isCreatingTransaction}
-                            className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
-                          >
-                            {isCreatingTransaction
-                              ? "Salvando..."
-                              : "Salvar e fechar"}
-                          </button>
-                          <button
-                            type="submit"
-                            data-action="repeat"
-                            disabled={isCreatingTransaction}
-                            className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            {isCreatingTransaction
-                              ? "Salvando..."
-                              : "Salvar e criar outro"}
-                          </button>
-                        </div>
-                      </form>
-                    )}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
