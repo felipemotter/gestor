@@ -23,6 +23,10 @@ const calendarDateFormatter = new Intl.DateTimeFormat("pt-BR", {
   day: "numeric",
   month: "short",
 });
+const longDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+  day: "2-digit",
+});
 const toLocalDateInputValue = (date: Date) => {
   const offset = date.getTimezoneOffset() * 60 * 1000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
@@ -1145,6 +1149,16 @@ export default function HomePage() {
     }
     return shortDateFormatter.format(parsed);
   };
+  const formatMobileDate = (value: string) => {
+    const parsed = parseLocalDateInput(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return longDateFormatter
+      .format(parsed)
+      .replace(".", "")
+      .replace(/^./, (char) => char.toUpperCase());
+  };
   const expenseTotals = transactions.reduce<
     Record<string, { name: string; total: number }>
   >((acc, transaction) => {
@@ -1425,6 +1439,23 @@ export default function HomePage() {
   useEffect(() => {
     setMonthPickerYear(activeYear);
   }, [activeYear]);
+
+  const mobileTransactionGroups = visibleTransactions.reduce<
+    Record<string, typeof visibleTransactions>
+  >((acc, transaction) => {
+    const parsedDate = new Date(transaction.posted_at);
+    const key = Number.isNaN(parsedDate.getTime())
+      ? transaction.posted_at
+      : toLocalDateInputValue(parsedDate);
+    if (!acc[key]) {
+      acc[key] = [];
+    }
+    acc[key].push(transaction);
+    return acc;
+  }, {});
+  const mobileTransactionEntries = Object.entries(mobileTransactionGroups).sort(
+    ([dateA], [dateB]) => dateB.localeCompare(dateA),
+  );
 
   const handleSelectMonth = (
     monthIndex: number,
@@ -2786,7 +2817,157 @@ export default function HomePage() {
                         </div>
                       ) : null}
 
-                      <div className="mt-4 overflow-x-auto">
+                      <div className="mt-4 sm:hidden">
+                        {isLoadingTransactions ? (
+                          <p className="text-sm text-[var(--muted)]">
+                            Carregando lançamentos...
+                          </p>
+                        ) : visibleTransactions.length === 0 ? (
+                          <p className="text-sm text-[var(--muted)]">
+                            Nenhum lançamento encontrado.
+                          </p>
+                        ) : (
+                          <div className="space-y-4">
+                            {mobileTransactionEntries.map(
+                              ([dateKey, dayTransactions]) => (
+                                <div key={dateKey}>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                                    {formatMobileDate(dateKey)}
+                                  </p>
+                                  <div className="mt-2 space-y-2">
+                                    {dayTransactions.map((transaction) => {
+                                      const isTransferRow =
+                                        transaction.source === "transfer";
+                                      const rawValue = Number(transaction.amount);
+                                      const isNumeric = Number.isFinite(rawValue);
+                                      const displayValue =
+                                        isTransferRow && isNumeric
+                                          ? Math.abs(rawValue)
+                                          : rawValue;
+                                      const formattedValue = isNumeric
+                                        ? currencyFormatter.format(displayValue)
+                                        : transaction.amount;
+                                      const categoryType =
+                                        transaction.category?.category_type;
+                                      const sign = isTransferRow
+                                        ? rawValue < 0
+                                          ? "-"
+                                          : "+"
+                                        : categoryType === "income"
+                                          ? "+"
+                                          : categoryType === "expense"
+                                            ? "-"
+                                            : "";
+                                      const valueTone =
+                                        isTransferRow
+                                          ? rawValue < 0
+                                            ? "text-rose-600"
+                                            : "text-emerald-600"
+                                          : categoryType === "expense"
+                                            ? "text-rose-600"
+                                            : categoryType === "income"
+                                              ? "text-emerald-600"
+                                              : "text-[var(--ink)]";
+                                      const categoryLabel =
+                                        transaction.category?.name ??
+                                        (isTransferRow
+                                          ? "Transferência"
+                                          : "Sem categoria");
+                                      const title =
+                                        transaction.description?.trim() ||
+                                        categoryLabel;
+                                      const meta = [
+                                        categoryLabel,
+                                        transaction.account?.name ?? "Conta",
+                                      ].join(" | ");
+                                      const iconTone = isTransferRow
+                                        ? "bg-sky-100 text-sky-600"
+                                        : categoryType === "income"
+                                          ? "bg-emerald-100 text-emerald-600"
+                                          : categoryType === "expense"
+                                            ? "bg-rose-100 text-rose-600"
+                                            : "bg-slate-100 text-slate-500";
+
+                                      return (
+                                        <div
+                                          key={transaction.id}
+                                          className="flex w-full items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-4 py-3 shadow-sm"
+                                        >
+                                          <div
+                                            className={`flex h-10 w-10 items-center justify-center rounded-full ${iconTone}`}
+                                          >
+                                            {isTransferRow ? (
+                                              <svg
+                                                aria-hidden="true"
+                                                viewBox="0 0 24 24"
+                                                className="h-5 w-5"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                              >
+                                                <path d="M7 7h10" />
+                                                <path d="M14 4l3 3-3 3" />
+                                                <path d="M17 17H7" />
+                                                <path d="M10 20l-3-3 3-3" />
+                                              </svg>
+                                            ) : categoryType === "income" ? (
+                                              <svg
+                                                aria-hidden="true"
+                                                viewBox="0 0 24 24"
+                                                className="h-5 w-5"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                              >
+                                                <path d="M12 19V5" />
+                                                <path d="M5 12l7-7 7 7" />
+                                              </svg>
+                                            ) : (
+                                              <svg
+                                                aria-hidden="true"
+                                                viewBox="0 0 24 24"
+                                                className="h-5 w-5"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                              >
+                                                <path d="M12 5v14" />
+                                                <path d="M19 12l-7 7-7-7" />
+                                              </svg>
+                                            )}
+                                          </div>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-semibold leading-snug text-[var(--ink)] break-words">
+                                              {title}
+                                            </p>
+                                            <p className="mt-0.5 text-xs leading-snug text-[var(--muted)] break-words">
+                                              {meta}
+                                            </p>
+                                          </div>
+                                          <div className="ml-2 shrink-0 text-right">
+                                            <p
+                                              className={`min-w-[88px] text-sm font-semibold ${valueTone}`}
+                                            >
+                                              {sign} {formattedValue}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ),
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-4 hidden overflow-x-auto sm:block">
                         <table className="w-full text-sm">
                           <thead className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
                             <tr className="border-b border-[var(--border)]">
