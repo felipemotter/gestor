@@ -10,6 +10,14 @@ const primaryButton =
   "inline-flex items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-blue-500/30 transition hover:bg-[var(--accent-strong)]";
 const secondaryButton =
   "inline-flex items-center justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)]";
+const BRAZIL_TZ = "America/Sao_Paulo";
+const brazilDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: BRAZIL_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const getBrazilToday = () => brazilDateFormatter.format(new Date());
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -17,26 +25,61 @@ const currencyFormatter = new Intl.NumberFormat("pt-BR", {
 const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
   month: "2-digit",
+  timeZone: BRAZIL_TZ,
 });
 const calendarDateFormatter = new Intl.DateTimeFormat("pt-BR", {
   weekday: "short",
   day: "numeric",
   month: "short",
+  timeZone: BRAZIL_TZ,
 });
 const longDateFormatter = new Intl.DateTimeFormat("pt-BR", {
   weekday: "long",
   day: "2-digit",
+  month: "short",
+  year: "numeric",
+  timeZone: BRAZIL_TZ,
 });
-const toLocalDateInputValue = (date: Date) => {
-  const offset = date.getTimezoneOffset() * 60 * 1000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
-};
-const parseLocalDateInput = (value: string) => {
+const getDateParts = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) {
+    return null;
+  }
+  return { year, monthIndex: month - 1, day };
+};
+const formatDateKey = (year: number, monthIndex: number, day: number) =>
+  `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(
+    2,
+    "0",
+  )}`;
+const parseBrazilDate = (value: string) => {
+  const parts = getDateParts(value);
+  if (!parts) {
     return new Date();
   }
-  return new Date(year, month - 1, day);
+  return new Date(Date.UTC(parts.year, parts.monthIndex, parts.day, 12));
+};
+const addDaysToBrazilDate = (value: string, offset: number) => {
+  const base = parseBrazilDate(value);
+  base.setUTCDate(base.getUTCDate() + offset);
+  return brazilDateFormatter.format(base);
+};
+const isDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+const parseDateValue = (value: string) => {
+  if (isDateOnly(value)) {
+    return parseBrazilDate(value);
+  }
+  return new Date(value);
+};
+const toBrazilDateKey = (value: string) => {
+  if (isDateOnly(value)) {
+    return value;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return brazilDateFormatter.format(parsed);
 };
 const calendarWeekdays = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 
@@ -48,12 +91,12 @@ const getMonthRange = (monthValue: string) => {
     return { startDate: "", endDate: "" };
   }
 
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0);
+  const paddedMonth = String(month).padStart(2, "0");
+  const endDay = new Date(year, month, 0).getDate();
 
   return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
+    startDate: `${year}-${paddedMonth}-01`,
+    endDate: `${year}-${paddedMonth}-${String(endDay).padStart(2, "0")}`,
   };
 };
 
@@ -67,7 +110,7 @@ export default function HomePage() {
     "dashboard" | "transactions" | "transfers"
   >("dashboard");
   const [activeMonth, setActiveMonth] = useState(() =>
-    new Date().toISOString().slice(0, 7),
+    getBrazilToday().slice(0, 7),
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [memberships, setMemberships] = useState<
@@ -145,21 +188,23 @@ export default function HomePage() {
   const [transactionAmount, setTransactionAmount] = useState("");
   const [transactionDescription, setTransactionDescription] = useState("");
   const [transactionDate, setTransactionDate] = useState(() =>
-    toLocalDateInputValue(new Date()),
+    getBrazilToday(),
   );
   const [datePreset, setDatePreset] = useState<
     "today" | "yesterday" | "custom"
   >("today");
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarTempDate, setCalendarTempDate] = useState(() =>
-    toLocalDateInputValue(new Date()),
+    getBrazilToday(),
   );
-  const [calendarMonth, setCalendarMonth] = useState(() =>
-    new Date().getMonth(),
-  );
-  const [calendarYear, setCalendarYear] = useState(() =>
-    new Date().getFullYear(),
-  );
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const parts = getDateParts(getBrazilToday());
+    return parts ? parts.monthIndex : new Date().getMonth();
+  });
+  const [calendarYear, setCalendarYear] = useState(() => {
+    const parts = getDateParts(getBrazilToday());
+    return parts ? parts.year : new Date().getFullYear();
+  });
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
@@ -176,9 +221,10 @@ export default function HomePage() {
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
   const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
-  const [monthPickerYear, setMonthPickerYear] = useState(() =>
-    new Date().getFullYear(),
-  );
+  const [monthPickerYear, setMonthPickerYear] = useState(() => {
+    const parts = getDateParts(getBrazilToday());
+    return parts ? parts.year : new Date().getFullYear();
+  });
   const monthPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -399,7 +445,7 @@ export default function HomePage() {
       return;
     }
 
-    const fallback = getMonthRange(new Date().toISOString().slice(0, 7));
+    const fallback = getMonthRange(getBrazilToday().slice(0, 7));
     const startDate = range?.startDate || fallback.startDate;
     const endDate = range?.endDate || fallback.endDate;
 
@@ -446,7 +492,7 @@ export default function HomePage() {
     }
 
     setIsLoadingBalances(true);
-    const fallback = getMonthRange(new Date().toISOString().slice(0, 7));
+    const fallback = getMonthRange(getBrazilToday().slice(0, 7));
     const startDate = range?.startDate || fallback.startDate;
     const endDate = range?.endDate || fallback.endDate;
     const authedSupabase = getAuthedSupabaseClient(accessToken);
@@ -752,7 +798,7 @@ export default function HomePage() {
     setTransactionCategoryId("");
     setTransactionType(nextType);
     setDatePreset("today");
-    const today = toLocalDateInputValue(new Date());
+    const today = getBrazilToday();
     setTransactionDate(today);
     setCalendarTempDate(today);
     setIsTransactionModalOpen(true);
@@ -814,27 +860,29 @@ export default function HomePage() {
   const applyDatePreset = (preset: "today" | "yesterday" | "custom") => {
     setDatePreset(preset);
     if (preset === "custom") {
-      const customDate = parseLocalDateInput(transactionDate);
-      setCalendarMonth(customDate.getMonth());
-      setCalendarYear(customDate.getFullYear());
+      const customDateParts = getDateParts(transactionDate);
+      if (customDateParts) {
+        setCalendarMonth(customDateParts.monthIndex);
+        setCalendarYear(customDateParts.year);
+      }
       setCalendarTempDate(transactionDate);
       setIsCalendarOpen(true);
       return;
     }
-    const baseDate = new Date();
-    if (preset === "yesterday") {
-      baseDate.setDate(baseDate.getDate() - 1);
-    }
-    const nextDate = toLocalDateInputValue(baseDate);
+    const today = getBrazilToday();
+    const nextDate =
+      preset === "yesterday" ? addDaysToBrazilDate(today, -1) : today;
     setTransactionDate(nextDate);
     setCalendarTempDate(nextDate);
     setIsCalendarOpen(false);
   };
 
   const openCalendarPicker = () => {
-    const customDate = parseLocalDateInput(transactionDate);
-    setCalendarMonth(customDate.getMonth());
-    setCalendarYear(customDate.getFullYear());
+    const customDateParts = getDateParts(transactionDate);
+    if (customDateParts) {
+      setCalendarMonth(customDateParts.monthIndex);
+      setCalendarYear(customDateParts.year);
+    }
     setCalendarTempDate(transactionDate);
     setIsCalendarOpen(true);
   };
@@ -1130,10 +1178,14 @@ export default function HomePage() {
   );
   const showPagination = !normalizedSearch;
   const showLocalFilter = normalizedSearch || isTypeFilterActive;
-  const monthDate = new Date(`${activeMonth}-01T00:00:00`);
+  const monthDate = parseBrazilDate(`${activeMonth}-01`);
   const monthLabel = Number.isNaN(monthDate.getTime())
     ? activeMonth
-    : new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" })
+    : new Intl.DateTimeFormat("pt-BR", {
+        month: "long",
+        year: "numeric",
+        timeZone: BRAZIL_TZ,
+      })
         .format(monthDate)
         .replace(/^./, (char) => char.toUpperCase());
   const userInitial =
@@ -1143,21 +1195,23 @@ export default function HomePage() {
     : "/logo_gestor.png";
   const signOutLabel = isSigningOut ? "Saindo..." : "Sair";
   const formatDate = (value: string) => {
-    const parsed = new Date(value);
+    const parsed = parseDateValue(value);
     if (Number.isNaN(parsed.getTime())) {
       return value;
     }
     return shortDateFormatter.format(parsed);
   };
   const formatMobileDate = (value: string) => {
-    const parsed = parseLocalDateInput(value);
+    const parsed = parseDateValue(value);
     if (Number.isNaN(parsed.getTime())) {
       return value;
     }
     return longDateFormatter
       .format(parsed)
-      .replace(".", "")
-      .replace(/^./, (char) => char.toUpperCase());
+      .replace(/\./g, "")
+      .replace(/\s+de\s+/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .toUpperCase();
   };
   const expenseTotals = transactions.reduce<
     Record<string, { name: string; total: number }>
@@ -1395,12 +1449,13 @@ export default function HomePage() {
     "Novembro",
     "Dezembro",
   ];
-  const selectedDate = parseLocalDateInput(transactionDate);
+  const selectedDate = parseBrazilDate(transactionDate);
   const selectedDateLabel = calendarDateFormatter
     .format(selectedDate)
     .replace(".", "")
     .toUpperCase();
-  const calendarSelectedDate = parseLocalDateInput(calendarTempDate);
+  const calendarSelectedDate = parseBrazilDate(calendarTempDate);
+  const calendarSelectedParts = getDateParts(calendarTempDate);
   const calendarSelectedLabel = calendarDateFormatter
     .format(calendarSelectedDate)
     .replace(".", "")
@@ -1443,10 +1498,7 @@ export default function HomePage() {
   const mobileTransactionGroups = visibleTransactions.reduce<
     Record<string, typeof visibleTransactions>
   >((acc, transaction) => {
-    const parsedDate = new Date(transaction.posted_at);
-    const key = Number.isNaN(parsedDate.getTime())
-      ? transaction.posted_at
-      : toLocalDateInputValue(parsedDate);
+    const key = toBrazilDateKey(transaction.posted_at);
     if (!acc[key]) {
       acc[key] = [];
     }
@@ -2570,17 +2622,20 @@ export default function HomePage() {
                                   return <span key={`empty-${index}`} />;
                                 }
                                 const isSelected =
-                                  day === calendarSelectedDate.getDate() &&
-                                  calendarMonth === calendarSelectedDate.getMonth() &&
-                                  calendarYear === calendarSelectedDate.getFullYear();
+                                  Boolean(calendarSelectedParts) &&
+                                  day === calendarSelectedParts?.day &&
+                                  calendarMonth === calendarSelectedParts?.monthIndex &&
+                                  calendarYear === calendarSelectedParts?.year;
                                 return (
                                   <button
                                     key={`${calendarYear}-${calendarMonth}-${day}`}
                                     type="button"
                                     onClick={() => {
                                       setCalendarTempDate(
-                                        toLocalDateInputValue(
-                                          new Date(calendarYear, calendarMonth, day),
+                                        formatDateKey(
+                                          calendarYear,
+                                          calendarMonth,
+                                          day,
                                         ),
                                       );
                                     }}
