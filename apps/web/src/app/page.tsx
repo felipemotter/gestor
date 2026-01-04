@@ -208,6 +208,7 @@ export default function HomePage() {
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [filterAccountId, setFilterAccountId] = useState("");
   const [filterCategoryId, setFilterCategoryId] = useState("");
   const [typeFilters, setTypeFilters] = useState<string[]>([
@@ -1176,6 +1177,12 @@ export default function HomePage() {
       normalizedSearch ||
       isTypeFilterActive,
   );
+  const activeFiltersCount = [
+    filterAccountId ? 1 : 0,
+    filterCategoryId ? 1 : 0,
+    normalizedSearch ? 1 : 0,
+    isTypeFilterActive ? 1 : 0,
+  ].reduce((total, value) => total + value, 0);
   const showPagination = !normalizedSearch;
   const showLocalFilter = normalizedSearch || isTypeFilterActive;
   const monthDate = parseBrazilDate(`${activeMonth}-01`);
@@ -1329,6 +1336,53 @@ export default function HomePage() {
       );
     });
   };
+  const activeFilterChips: Array<{
+    key: string;
+    label: string;
+    className: string;
+    title?: string;
+  }> = [];
+  if (filterAccountId) {
+    const accountLabel =
+      accounts.find((account) => account.id === filterAccountId)?.name ??
+      "Conta";
+    activeFilterChips.push({
+      key: "account",
+      label: `Conta: ${accountLabel}`,
+      title: accountLabel,
+      className: "bg-slate-100 text-slate-600",
+    });
+  }
+  if (filterCategoryId) {
+    const categoryLabel =
+      categories.find((category) => category.id === filterCategoryId)?.name ??
+      "Categoria";
+    activeFilterChips.push({
+      key: "category",
+      label: `Categoria: ${categoryLabel}`,
+      title: categoryLabel,
+      className: "bg-slate-100 text-slate-600",
+    });
+  }
+  if (isTypeFilterActive) {
+    typeFilterOptions
+      .filter((option) => typeFilters.includes(option.value))
+      .forEach((option) => {
+        activeFilterChips.push({
+          key: `type-${option.value}`,
+          label: option.label,
+          className: option.active,
+        });
+      });
+  }
+  if (normalizedSearch) {
+    activeFilterChips.push({
+      key: "search",
+      label: `Busca: ${searchQuery.trim()}`,
+      title: searchQuery.trim(),
+      className: "bg-slate-100 text-slate-600",
+    });
+  }
   const destinationAccounts = accounts.filter(
     (account) => account.id !== transactionAccountId,
   );
@@ -2774,17 +2828,12 @@ export default function HomePage() {
                         isDashboardView ? "xl:grid-cols-[minmax(0,1fr)_320px]" : ""
                       }`}
                     >
-                    <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                          <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                    <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
+                      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+                        <div className="pl-1 sm:pl-0">
+                          <h3 className="text-base font-semibold uppercase tracking-[0.2em] text-[var(--ink)] sm:text-lg sm:tracking-[0.24em]">
                             {isTransactionsView ? "Lançamentos" : "Últimos lançamentos"}
                           </h3>
-                          <p className="mt-2 text-sm text-[var(--muted)]">
-                            {isTransactionsView
-                              ? "Filtre e revise todos os lançamentos do mês."
-                              : `Período selecionado: ${monthLabel}`}
-                          </p>
                         </div>
                         {isTransactionsView && hasActiveFilters ? (
                           <button
@@ -2795,7 +2844,7 @@ export default function HomePage() {
                               setSearchQuery("");
                               setTypeFilters([...typeFilterAll]);
                             }}
-                            className="rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] transition hover:border-[var(--accent)]"
+                            className="hidden rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] sm:inline-flex"
                           >
                             Limpar filtros
                           </button>
@@ -2811,65 +2860,212 @@ export default function HomePage() {
                         ) : null}
                       </div>
 
+                      <div className="mt-2 h-px w-full bg-[var(--border)]/60 sm:mt-3" />
+
                       {isTransactionsView ? (
-                        <div className="mt-4 flex flex-wrap items-center gap-3">
-                          <select
-                            value={filterAccountId}
-                            onChange={(event) =>
-                              setFilterAccountId(event.target.value)
-                            }
-                            className="min-w-[180px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                          >
-                            <option value="">Todas as contas</option>
-                            {accounts.map((account) => (
-                              <option key={account.id} value={account.id}>
-                                {account.name}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            value={filterCategoryId}
-                            onChange={(event) =>
-                              setFilterCategoryId(event.target.value)
-                            }
-                            className="min-w-[180px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                          >
-                            <option value="">Todas as categorias</option>
-                            {categories.map((category) => (
-                              <option key={category.id} value={category.id}>
-                                {category.name}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="flex flex-wrap items-center gap-1 rounded-full border border-[var(--border)] bg-white px-1 py-1 shadow-sm">
-                            {typeFilterOptions.map((option) => {
-                              const isActive = typeFilters.includes(option.value);
-                              return (
+                        <>
+                          <div className="mt-4 sm:hidden">
+                            <div className="rounded-2xl border border-[var(--border)] bg-white shadow-sm">
+                              <div className="flex items-center justify-between px-3 py-2">
                                 <button
-                                  key={option.value}
                                   type="button"
-                                  aria-pressed={isActive}
-                                  onClick={() => toggleTypeFilter(option.value)}
-                                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                                    isActive ? option.active : option.inactive
-                                  }`}
+                                  onClick={() =>
+                                    setIsMobileFiltersOpen((prev) => !prev)
+                                  }
+                                  className="flex items-center gap-2 text-xs font-semibold text-[var(--ink)]"
                                 >
-                                  {option.label}
+                                  <span className="uppercase tracking-[0.2em] text-[var(--muted)]">
+                                    Filtros
+                                  </span>
+                                  {activeFiltersCount > 0 ? (
+                                    <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-strong)]">
+                                      {activeFiltersCount}
+                                    </span>
+                                  ) : null}
+                                  <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                    className={`h-4 w-4 text-[var(--muted)] transition ${
+                                      isMobileFiltersOpen ? "rotate-180" : ""
+                                    }`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M6 9l6 6 6-6" />
+                                  </svg>
                                 </button>
-                              );
-                            })}
+                                {hasActiveFilters ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFilterAccountId("");
+                                      setFilterCategoryId("");
+                                      setSearchQuery("");
+                                      setTypeFilters([...typeFilterAll]);
+                                      setIsMobileFiltersOpen(false);
+                                    }}
+                                    className="text-xs font-semibold text-[var(--accent-strong)]"
+                                  >
+                                    Limpar
+                                  </button>
+                                ) : null}
+                              </div>
+                              {!isMobileFiltersOpen &&
+                              activeFilterChips.length > 0 ? (
+                                <div className="flex flex-wrap gap-2 px-3 pb-3">
+                                  {activeFilterChips.map((chip) => (
+                                    <span
+                                      key={chip.key}
+                                      title={chip.title ?? chip.label}
+                                      className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11px] font-semibold ${chip.className}`}
+                                    >
+                                      {chip.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {isMobileFiltersOpen ? (
+                                <div className="grid gap-3 border-t border-[var(--border)] px-3 py-3">
+                                <div className="grid gap-2">
+                                  <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                                    Conta
+                                  </label>
+                                  <select
+                                    value={filterAccountId}
+                                    onChange={(event) =>
+                                      setFilterAccountId(event.target.value)
+                                    }
+                                    className="h-10 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                                  >
+                                    <option value="">Todas as contas</option>
+                                    {accounts.map((account) => (
+                                      <option key={account.id} value={account.id}>
+                                        {account.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="grid gap-2">
+                                  <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                                    Categoria
+                                  </label>
+                                  <select
+                                    value={filterCategoryId}
+                                    onChange={(event) =>
+                                      setFilterCategoryId(event.target.value)
+                                    }
+                                    className="h-10 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                                  >
+                                    <option value="">Todas as categorias</option>
+                                    {categories.map((category) => (
+                                      <option key={category.id} value={category.id}>
+                                        {category.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="grid gap-2">
+                                  <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                                    Tipo
+                                  </label>
+                                  <div className="flex flex-wrap items-center gap-1 rounded-full border border-[var(--border)] bg-white px-1 py-1 shadow-sm">
+                                    {typeFilterOptions.map((option) => {
+                                      const isActive = typeFilters.includes(option.value);
+                                      return (
+                                        <button
+                                          key={option.value}
+                                          type="button"
+                                          aria-pressed={isActive}
+                                          onClick={() => toggleTypeFilter(option.value)}
+                                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                                            isActive ? option.active : option.inactive
+                                          }`}
+                                        >
+                                          {option.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div className="grid gap-2">
+                                  <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                                    Busca
+                                  </label>
+                                  <input
+                                    value={searchQuery}
+                                    onChange={(event) =>
+                                      setSearchQuery(event.target.value)
+                                    }
+                                    placeholder="Buscar lançamentos, contas ou categorias..."
+                                    className="h-10 w-full rounded-xl border border-[var(--border)] bg-white px-4 text-xs font-semibold text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                                  />
+                                </div>
+                              </div>
+                              ) : null}
+                            </div>
                           </div>
-                          <div className="min-w-[220px] flex-1">
-                            <input
-                              value={searchQuery}
+                          <div className="mt-4 hidden flex-wrap items-center gap-3 sm:flex">
+                            <select
+                              value={filterAccountId}
                               onChange={(event) =>
-                                setSearchQuery(event.target.value)
+                                setFilterAccountId(event.target.value)
                               }
-                              placeholder="Buscar lançamentos, contas ou categorias..."
-                              className="h-10 w-full rounded-xl border border-[var(--border)] bg-white px-4 text-xs font-semibold text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                            />
+                              className="min-w-[180px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                            >
+                              <option value="">Todas as contas</option>
+                              {accounts.map((account) => (
+                                <option key={account.id} value={account.id}>
+                                  {account.name}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={filterCategoryId}
+                              onChange={(event) =>
+                                setFilterCategoryId(event.target.value)
+                              }
+                              className="min-w-[180px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                            >
+                              <option value="">Todas as categorias</option>
+                              {categories.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.name}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="flex flex-wrap items-center gap-1 rounded-full border border-[var(--border)] bg-white px-1 py-1 shadow-sm">
+                              {typeFilterOptions.map((option) => {
+                                const isActive = typeFilters.includes(option.value);
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    aria-pressed={isActive}
+                                    onClick={() => toggleTypeFilter(option.value)}
+                                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                                      isActive ? option.active : option.inactive
+                                    }`}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="min-w-[220px] flex-1">
+                              <input
+                                value={searchQuery}
+                                onChange={(event) =>
+                                  setSearchQuery(event.target.value)
+                                }
+                                placeholder="Buscar lançamentos, contas ou categorias..."
+                                className="h-10 w-full rounded-xl border border-[var(--border)] bg-white px-4 text-xs font-semibold text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                              />
+                            </div>
                           </div>
-                        </div>
+                        </>
                       ) : null}
 
                       <div className="mt-4 sm:hidden">
@@ -2882,10 +3078,10 @@ export default function HomePage() {
                             Nenhum lançamento encontrado.
                           </p>
                         ) : (
-                          <div className="space-y-4">
-                            {mobileTransactionEntries.map(
-                              ([dateKey, dayTransactions]) => (
-                                <div key={dateKey}>
+                        <div className="space-y-3">
+                          {mobileTransactionEntries.map(
+                            ([dateKey, dayTransactions]) => (
+                              <div key={dateKey}>
                                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
                                     {formatMobileDate(dateKey)}
                                   </p>
@@ -2946,7 +3142,7 @@ export default function HomePage() {
                                       return (
                                         <div
                                           key={transaction.id}
-                                          className="flex w-full items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-4 py-3 shadow-sm"
+                                          className="flex w-full items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-3 py-2 shadow-sm"
                                         >
                                           <div
                                             className={`flex h-10 w-10 items-center justify-center rounded-full ${iconTone}`}
