@@ -832,6 +832,11 @@ export default function HomePage() {
     setIsSigningOut(false);
   };
 
+  const handleLogoClick = () => {
+    setActiveView("dashboard");
+    setIsMobileMenuOpen(false);
+  };
+
   const openTransactionModal = (nextType: string = "expense") => {
     setTransactionError(null);
     setTransactionDestinationAccountId("");
@@ -1939,8 +1944,11 @@ export default function HomePage() {
                     : "items-center justify-between"
                 }`}
               >
-                <div
-                  className={`flex items-center justify-center rounded-2xl px-1 ${
+                <button
+                  type="button"
+                  onClick={handleLogoClick}
+                  aria-label="Ir para o dashboard"
+                  className={`flex items-center justify-center rounded-2xl px-1 transition hover:bg-slate-50 ${
                     isSidebarCollapsed ? "h-12 w-12" : "h-14 w-full"
                   }`}
                 >
@@ -1953,7 +1961,7 @@ export default function HomePage() {
                         : "h-10 w-full object-contain"
                     }
                   />
-                </div>
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsSidebarCollapsed((prev) => !prev)}
@@ -2117,13 +2125,18 @@ export default function HomePage() {
                         <path d="M4 18h16" />
                       </svg>
                     </button>
-                    <div className="flex h-10 flex-1 items-center justify-center rounded-xl px-1 lg:hidden">
+                    <button
+                      type="button"
+                      onClick={handleLogoClick}
+                      aria-label="Ir para o dashboard"
+                      className="flex h-10 flex-1 items-center justify-center rounded-xl px-1 transition hover:bg-slate-50 lg:hidden"
+                    >
                       <img
                         src="/logo_gestor.png"
                         alt="Gestor"
                         className="h-8 w-full max-w-[140px] object-contain"
                       />
-                    </div>
+                    </button>
                     <div
                       ref={monthPickerRef}
                       className="relative lg:absolute lg:left-1/2 lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2"
@@ -2309,11 +2322,18 @@ export default function HomePage() {
                   />
                   <div className="relative z-10 h-full w-[260px] max-w-[85vw] overflow-y-auto rounded-r-3xl border-r border-[var(--border)] bg-white/95 p-5 shadow-[var(--shadow)]">
                     <div className="flex items-center justify-between">
-                      <img
-                        src="/logo_gestor.png"
-                        alt="Gestor"
-                        className="h-9 w-auto object-contain"
-                      />
+                      <button
+                        type="button"
+                        onClick={handleLogoClick}
+                        aria-label="Ir para o dashboard"
+                        className="flex items-center rounded-xl px-1 transition hover:bg-slate-50"
+                      >
+                        <img
+                          src="/logo_gestor.png"
+                          alt="Gestor"
+                          className="h-9 w-auto object-contain"
+                        />
+                      </button>
                       <button
                         type="button"
                         onClick={() => setIsMobileMenuOpen(false)}
