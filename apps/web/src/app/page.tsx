@@ -108,7 +108,7 @@ export default function HomePage() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<
-    "dashboard" | "transactions" | "transfers"
+    "dashboard" | "transactions" | "transfers" | "accounts"
   >("dashboard");
   const [activeMonth, setActiveMonth] = useState(() =>
     getBrazilToday().slice(0, 7),
@@ -129,11 +129,13 @@ export default function HomePage() {
   const [accounts, setAccounts] = useState<
     Array<{
       id: string;
+      family_id: string;
       name: string;
       account_type: string;
       currency: string;
       visibility: string;
       owner_user_id: string | null;
+      opening_balance: number | null;
       created_at: string;
     }>
   >([]);
@@ -175,12 +177,28 @@ export default function HomePage() {
   const [accountName, setAccountName] = useState("");
   const [accountType, setAccountType] = useState("checking");
   const [accountVisibility, setAccountVisibility] = useState("shared");
+  const [accountOpeningBalance, setAccountOpeningBalance] = useState("");
   const [accountError, setAccountError] = useState<string | null>(null);
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
   const [categoryName, setCategoryName] = useState("");
   const [categoryType, setCategoryType] = useState("expense");
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [isEditingAccount, setIsEditingAccount] = useState(false);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [openAccountMenuId, setOpenAccountMenuId] = useState<string | null>(null);
+  const [isBalanceAdjustOpen, setIsBalanceAdjustOpen] = useState(false);
+  const [balanceAdjustAccountId, setBalanceAdjustAccountId] = useState<string | null>(
+    null,
+  );
+  const [balanceAdjustTarget, setBalanceAdjustTarget] = useState("");
+  const [balanceAdjustMethod, setBalanceAdjustMethod] = useState<
+    "opening" | "transaction"
+  >("transaction");
+  const [balanceAdjustCategoryId, setBalanceAdjustCategoryId] = useState("");
+  const [balanceAdjustError, setBalanceAdjustError] = useState<string | null>(null);
+  const [isAdjustingBalance, setIsAdjustingBalance] = useState(false);
   const [transactionAccountId, setTransactionAccountId] = useState("");
   const [transactionDestinationAccountId, setTransactionDestinationAccountId] =
     useState("");
@@ -275,7 +293,11 @@ export default function HomePage() {
       return undefined;
     }
     const shouldLockScroll =
-      isTransactionModalOpen || isMobileMenuOpen || isFilterCalendarOpen;
+      isTransactionModalOpen ||
+      isMobileMenuOpen ||
+      isFilterCalendarOpen ||
+      isAccountModalOpen ||
+      isBalanceAdjustOpen;
     if (!shouldLockScroll) {
       return undefined;
     }
@@ -285,7 +307,13 @@ export default function HomePage() {
     return () => {
       body.style.overflow = previousOverflow;
     };
-  }, [isTransactionModalOpen, isMobileMenuOpen, isFilterCalendarOpen]);
+  }, [
+    isTransactionModalOpen,
+    isMobileMenuOpen,
+    isFilterCalendarOpen,
+    isAccountModalOpen,
+    isBalanceAdjustOpen,
+  ]);
 
   useEffect(() => {
     if (!isMonthPickerOpen) {
@@ -338,7 +366,9 @@ export default function HomePage() {
     const authedSupabase = getAuthedSupabaseClient(accessToken);
     const { data, error } = await authedSupabase
       .from("accounts")
-      .select("id, name, account_type, currency, visibility, owner_user_id, created_at")
+      .select(
+        "id, family_id, name, account_type, currency, visibility, owner_user_id, opening_balance, created_at",
+      )
       .eq("family_id", familyId)
       .order("created_at", { ascending: true });
 
@@ -503,6 +533,7 @@ export default function HomePage() {
     accountIds: string[],
     accessToken: string,
     range?: { startDate?: string; endDate?: string },
+    openingBalances?: Record<string, number>,
   ) => {
     if (accountIds.length === 0) {
       setAccountBalances({});
@@ -538,7 +569,7 @@ export default function HomePage() {
     }
 
     const balances = accountIds.reduce<Record<string, number>>((acc, id) => {
-      acc[id] = 0;
+      acc[id] = openingBalances?.[id] ?? 0;
       return acc;
     }, {});
 
@@ -652,9 +683,19 @@ export default function HomePage() {
         endDate: activeMonthRange.endDate || undefined,
       },
     );
-    loadAccountBalances(accounts.map((account) => account.id), session.access_token, {
-      endDate: activeMonthRange.endDate || undefined,
-    });
+    const openingBalances = accounts.reduce<Record<string, number>>((acc, account) => {
+      const rawValue = Number(account.opening_balance ?? 0);
+      acc[account.id] = Number.isFinite(rawValue) ? rawValue : 0;
+      return acc;
+    }, {});
+    loadAccountBalances(
+      accounts.map((account) => account.id),
+      session.access_token,
+      {
+        endDate: activeMonthRange.endDate || undefined,
+      },
+      openingBalances,
+    );
   }, [
     accounts,
     activeFamilyId,
@@ -807,6 +848,53 @@ export default function HomePage() {
   }, [isTransactionModalOpen]);
 
   useEffect(() => {
+    if (!isAccountModalOpen) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsAccountModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isAccountModalOpen]);
+
+  useEffect(() => {
+    if (!openAccountMenuId) {
+      return;
+    }
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest?.(`[data-account-menu-id="${openAccountMenuId}"]`)
+      ) {
+        return;
+      }
+      setOpenAccountMenuId(null);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [openAccountMenuId]);
+
+  useEffect(() => {
+    if (!isBalanceAdjustOpen) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsBalanceAdjustOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isBalanceAdjustOpen]);
+
+  useEffect(() => {
     if (!isFilterCalendarOpen) {
       return;
     }
@@ -826,16 +914,85 @@ export default function HomePage() {
     setIsSigningOut(false);
   };
 
+  const parseCurrencyInput = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const normalized = trimmed
+      .replace(/[^\d,.-]/g, "")
+      .replace(/\./g, "")
+      .replace(",", ".");
+    const parsedValue = Number(normalized);
+    return Number.isFinite(parsedValue) ? parsedValue : Number.NaN;
+  };
+
   const handleLogoClick = () => {
     setActiveView("dashboard");
     setIsMobileMenuOpen(false);
   };
 
-  const openTransactionModal = (nextType: string = "expense") => {
+  const closeAccountModal = () => {
+    setIsAccountModalOpen(false);
+    setIsEditingAccount(false);
+    setEditingAccountId(null);
+  };
+
+  const openAccountModal = () => {
+    setAccountError(null);
+    setIsEditingAccount(false);
+    setEditingAccountId(null);
+    setAccountName("");
+    setAccountType("checking");
+    setAccountVisibility("shared");
+    setAccountOpeningBalance("");
+    setIsAccountModalOpen(true);
+  };
+
+  const openAccountEditor = (account: (typeof accounts)[number]) => {
+    setAccountError(null);
+    setIsEditingAccount(true);
+    setEditingAccountId(account.id);
+    setAccountName(account.name);
+    setAccountType(account.account_type);
+    setAccountVisibility(account.visibility);
+    setAccountOpeningBalance(
+      account.opening_balance !== null && Number.isFinite(account.opening_balance)
+        ? String(account.opening_balance).replace(".", ",")
+        : "",
+    );
+    setIsAccountModalOpen(true);
+  };
+
+  const closeBalanceAdjust = () => {
+    setIsBalanceAdjustOpen(false);
+    setBalanceAdjustAccountId(null);
+    setBalanceAdjustTarget("");
+    setBalanceAdjustMethod("transaction");
+    setBalanceAdjustCategoryId("");
+    setBalanceAdjustError(null);
+  };
+
+  const openBalanceAdjust = (accountId: string) => {
+    setBalanceAdjustAccountId(accountId);
+    setBalanceAdjustTarget("");
+    setBalanceAdjustMethod("transaction");
+    setBalanceAdjustCategoryId("");
+    setBalanceAdjustError(null);
+    setIsBalanceAdjustOpen(true);
+  };
+
+  const openTransactionModal = (
+    nextType: string = "expense",
+    accountId?: string,
+  ) => {
     setTransactionError(null);
     setTransactionDestinationAccountId("");
     setTransactionCategoryId("");
     setTransactionType(nextType);
+    if (accountId) {
+      setTransactionAccountId(accountId);
+    }
     setDatePreset("today");
     const today = getBrazilToday();
     setTransactionDate(today);
@@ -1006,9 +1163,15 @@ export default function HomePage() {
       return;
     }
 
+    const openingBalanceValue = parseCurrencyInput(accountOpeningBalance);
+    if (openingBalanceValue !== null && Number.isNaN(openingBalanceValue)) {
+      setAccountError("Informe um saldo inicial válido.");
+      return;
+    }
+
     setIsCreatingAccount(true);
     const authedSupabase = getAuthedSupabaseClient(session.access_token);
-    const payload: Record<string, string | null> = {
+    const payload: Record<string, string | number | null> = {
       family_id: activeFamilyId,
       name: trimmedName,
       account_type: accountType,
@@ -1017,6 +1180,9 @@ export default function HomePage() {
       owner_user_id:
         accountVisibility === "private" ? session.user.id : null,
     };
+    if (openingBalanceValue !== null) {
+      payload.opening_balance = openingBalanceValue;
+    }
 
     const { error: accountInsertError } = await authedSupabase
       .from("accounts")
@@ -1031,8 +1197,201 @@ export default function HomePage() {
     setAccountName("");
     setAccountType("checking");
     setAccountVisibility("shared");
+    setAccountOpeningBalance("");
     await loadAccounts(activeFamilyId, session.access_token);
     setIsCreatingAccount(false);
+    closeAccountModal();
+  };
+
+  const handleUpdateAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAccountError(null);
+
+    if (!session?.access_token || !activeFamilyId || !editingAccountId) {
+      setAccountError("Selecione uma família ativa.");
+      return;
+    }
+
+    const trimmedName = accountName.trim();
+    if (trimmedName.length < 2) {
+      setAccountError("Informe o nome da conta.");
+      return;
+    }
+
+    const openingBalanceValue = parseCurrencyInput(accountOpeningBalance);
+    if (openingBalanceValue !== null && Number.isNaN(openingBalanceValue)) {
+      setAccountError("Informe um saldo inicial válido.");
+      return;
+    }
+
+    setIsCreatingAccount(true);
+    const authedSupabase = getAuthedSupabaseClient(session.access_token);
+    const payload: Record<string, string | number | null> = {
+      name: trimmedName,
+      account_type: accountType,
+      visibility: accountVisibility,
+      owner_user_id:
+        accountVisibility === "private" ? session.user.id : null,
+    };
+    if (openingBalanceValue !== null) {
+      payload.opening_balance = openingBalanceValue;
+    }
+
+    const { error: accountUpdateError } = await authedSupabase
+      .from("accounts")
+      .update(payload)
+      .eq("id", editingAccountId);
+
+    if (accountUpdateError) {
+      setAccountError(accountUpdateError.message);
+      setIsCreatingAccount(false);
+      return;
+    }
+
+    await loadAccounts(activeFamilyId, session.access_token);
+    setIsCreatingAccount(false);
+    closeAccountModal();
+  };
+
+  const handleAdjustBalance = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBalanceAdjustError(null);
+
+    if (!session?.access_token || !balanceAdjustAccountId || !activeFamilyId) {
+      setBalanceAdjustError("Selecione uma conta válida.");
+      return;
+    }
+
+    const account = accounts.find((item) => item.id === balanceAdjustAccountId);
+    if (!account) {
+      setBalanceAdjustError("Conta não encontrada.");
+      return;
+    }
+
+    const targetValue = parseCurrencyInput(balanceAdjustTarget);
+    if (targetValue === null) {
+      setBalanceAdjustError("Informe o saldo desejado.");
+      return;
+    }
+    if (Number.isNaN(targetValue)) {
+      setBalanceAdjustError("Informe um saldo desejado válido.");
+      return;
+    }
+
+    const currentBalance = accountBalances[account.id] ?? 0;
+    const difference = targetValue - currentBalance;
+    if (!Number.isFinite(difference) || Math.abs(difference) < 0.01) {
+      setBalanceAdjustError("O saldo desejado já está correto.");
+      return;
+    }
+
+    setIsAdjustingBalance(true);
+    const authedSupabase = getAuthedSupabaseClient(session.access_token);
+
+    let createdCategory = false;
+
+    if (balanceAdjustMethod === "opening") {
+      const currentOpening = Number(account.opening_balance ?? 0);
+      const nextOpening = currentOpening + difference;
+      const { error: updateError } = await authedSupabase
+        .from("accounts")
+        .update({ opening_balance: nextOpening })
+        .eq("id", account.id);
+      if (updateError) {
+        setBalanceAdjustError(updateError.message);
+        setIsAdjustingBalance(false);
+        return;
+      }
+    } else {
+      const requiredType = difference > 0 ? "income" : "expense";
+      let categoryId = balanceAdjustCategoryId;
+      if (categoryId) {
+        const category = categories.find((item) => item.id === categoryId);
+        if (!category || category.category_type !== requiredType) {
+          setBalanceAdjustError(
+            "Selecione uma categoria compatível com o tipo do ajuste.",
+          );
+          setIsAdjustingBalance(false);
+          return;
+        }
+      }
+      if (!categoryId) {
+        const fallbackName = "Ajuste de saldo";
+        const existingCategory = categories.find(
+          (item) =>
+            item.category_type === requiredType &&
+            item.name.toLowerCase() === fallbackName.toLowerCase(),
+        );
+        if (existingCategory) {
+          categoryId = existingCategory.id;
+        } else if (account.family_id) {
+          const { data: newCategory, error: categoryError } = await authedSupabase
+            .from("categories")
+            .insert({
+              family_id: account.family_id,
+              name: fallbackName,
+              category_type: requiredType,
+            })
+            .select("id")
+            .single();
+          if (categoryError || !newCategory) {
+            setBalanceAdjustError(
+              categoryError?.message ?? "Não foi possível criar a categoria.",
+            );
+            setIsAdjustingBalance(false);
+            return;
+          }
+          categoryId = newCategory.id;
+          createdCategory = true;
+        } else {
+          setBalanceAdjustError("Não foi possível identificar a família.");
+          setIsAdjustingBalance(false);
+          return;
+        }
+      }
+
+      const amountValue = Math.abs(difference);
+      const { error: insertError } = await authedSupabase.from("transactions").insert({
+        account_id: account.id,
+        category_id: categoryId,
+        amount: amountValue,
+        currency: "BRL",
+        description: "Ajuste de saldo",
+        posted_at: getBrazilToday(),
+        source: "adjustment",
+      });
+      if (insertError) {
+        setBalanceAdjustError(insertError.message);
+        setIsAdjustingBalance(false);
+        return;
+      }
+    }
+
+    await loadAccounts(activeFamilyId, session.access_token);
+    if (createdCategory) {
+      await loadCategories(activeFamilyId, session.access_token);
+    }
+    const monthRange = getMonthRange(activeMonth);
+    const isTransactionsScreen = activeView === "transactions";
+    const rangeStartDate = isTransactionsScreen
+      ? filterStartDate || monthRange.startDate
+      : monthRange.startDate;
+    const rangeEndDate = isTransactionsScreen
+      ? filterEndDate || monthRange.endDate
+      : monthRange.endDate;
+    await loadTransactions(
+      accounts.map((item) => item.id),
+      session.access_token,
+      transactionsLimit,
+      {
+        accountId: filterAccountId || undefined,
+        categoryId: filterCategoryId || undefined,
+        startDate: rangeStartDate || undefined,
+        endDate: rangeEndDate || undefined,
+      },
+    );
+    setIsAdjustingBalance(false);
+    closeBalanceAdjust();
   };
 
   const handleCreateCategory = async (event: FormEvent<HTMLFormElement>) => {
@@ -1251,9 +1610,75 @@ export default function HomePage() {
     }
     return sum + value;
   }, 0);
+  const balanceValueTone =
+    totalBalance < 0
+      ? "text-rose-100"
+      : totalBalance > 0
+        ? "text-emerald-100"
+        : "text-white";
+  const resultValueTone =
+    monthResult < 0
+      ? "text-rose-100"
+      : monthResult > 0
+        ? "text-emerald-100"
+        : "text-white";
+  const balanceDisplay = `${totalBalance > 0 ? "+ " : totalBalance < 0 ? "- " : ""}${currencyFormatter.format(
+    Math.abs(totalBalance),
+  )}`;
+  const resultDisplay = `${monthResult > 0 ? "+ " : monthResult < 0 ? "- " : ""}${currencyFormatter.format(
+    Math.abs(monthResult),
+  )}`;
+  const balanceIndicator =
+    totalBalance < 0
+      ? { label: "Negativo", dot: "bg-rose-500", text: "text-rose-700" }
+      : totalBalance > 0
+        ? { label: "Positivo", dot: "bg-emerald-500", text: "text-emerald-700" }
+        : { label: "Zerado", dot: "bg-slate-300", text: "text-slate-600" };
+  const resultIndicator =
+    monthResult < 0
+      ? { label: "Negativo", dot: "bg-rose-500", text: "text-rose-700" }
+      : monthResult > 0
+        ? { label: "Positivo", dot: "bg-emerald-500", text: "text-emerald-700" }
+        : { label: "Zerado", dot: "bg-slate-300", text: "text-slate-600" };
+  const balanceAdjustAccount = balanceAdjustAccountId
+    ? accounts.find((item) => item.id === balanceAdjustAccountId)
+    : null;
+  const balanceAdjustCurrent =
+    balanceAdjustAccountId && balanceAdjustAccount
+      ? accountBalances[balanceAdjustAccountId] ?? 0
+      : 0;
+  const balanceAdjustTargetValue = parseCurrencyInput(balanceAdjustTarget);
+  const balanceAdjustDifference =
+    balanceAdjustTargetValue !== null && !Number.isNaN(balanceAdjustTargetValue)
+      ? balanceAdjustTargetValue - balanceAdjustCurrent
+      : null;
+  const balanceAdjustType =
+    balanceAdjustDifference && balanceAdjustDifference !== 0
+      ? balanceAdjustDifference > 0
+        ? "income"
+        : "expense"
+      : null;
+  const balanceAdjustCategories = balanceAdjustType
+    ? categories.filter((category) => category.category_type === balanceAdjustType)
+    : [];
+  useEffect(() => {
+    if (!isBalanceAdjustOpen || !balanceAdjustType || !balanceAdjustCategoryId) {
+      return;
+    }
+    const category = categories.find((item) => item.id === balanceAdjustCategoryId);
+    if (!category || category.category_type !== balanceAdjustType) {
+      setBalanceAdjustCategoryId("");
+    }
+  }, [
+    isBalanceAdjustOpen,
+    balanceAdjustType,
+    balanceAdjustCategoryId,
+    categories,
+  ]);
   const isDashboardView = activeView === "dashboard";
   const isTransactionsView = activeView === "transactions";
   const isTransfersView = activeView === "transfers";
+  const isAccountsView = activeView === "accounts";
   const effectiveSearchQuery = isTransactionsView ? searchQuery : "";
   const normalizedSearch = effectiveSearchQuery.trim().toLowerCase();
   const effectiveTypeFilters = isTransactionsView
@@ -1783,6 +2208,7 @@ export default function HomePage() {
     },
     {
       label: "Contas",
+      view: "accounts" as const,
       icon: ({ className = "h-5 w-5" }) => (
         <svg
           aria-hidden="true"
@@ -2912,6 +3338,338 @@ export default function HomePage() {
                 </div>
               ) : null}
 
+              {isAccountModalOpen ? (
+                <div className="fixed inset-0 z-50 flex items-start justify-center px-3 py-4 sm:items-center sm:px-4 sm:py-6">
+                  <button
+                    type="button"
+                    aria-label="Fechar modal"
+                    onClick={closeAccountModal}
+                    className="absolute inset-0 animate-[overlay-in_0.2s_ease-out] bg-slate-900/40 backdrop-blur-sm"
+                  />
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="conta-modal-title"
+                    className="relative z-10 w-full max-w-lg animate-[modal-in_0.22s_ease-out] overflow-hidden rounded-3xl border border-[var(--border)] bg-white shadow-[var(--shadow)]"
+                  >
+                    <div className="flex items-start justify-between gap-2 border-b border-[var(--border)] px-5 py-4">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                          {isEditingAccount ? "Editar conta" : "Nova conta"}
+                        </p>
+                        <h2
+                          id="conta-modal-title"
+                          className="mt-1 text-lg font-semibold text-[var(--ink)]"
+                        >
+                          {isEditingAccount
+                            ? "Atualizar informações"
+                            : "Adicionar conta"}
+                        </h2>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeAccountModal}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-white text-[var(--muted)] shadow-sm transition hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                        aria-label="Fechar"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M18 6L6 18" />
+                          <path d="M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="px-5 py-5">
+                      <form
+                        className="grid gap-4"
+                        onSubmit={
+                          isEditingAccount ? handleUpdateAccount : handleCreateAccount
+                        }
+                      >
+                        <div className="grid gap-2">
+                          <label className="text-xs font-semibold text-[var(--muted)]">
+                            Nome da conta
+                          </label>
+                          <input
+                            value={accountName}
+                            onChange={(event) =>
+                              setAccountName(event.target.value)
+                            }
+                            placeholder="Ex.: Conta principal"
+                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <label className="text-xs font-semibold text-[var(--muted)]">
+                            Saldo inicial (opcional)
+                          </label>
+                          <input
+                            value={accountOpeningBalance}
+                            onChange={(event) =>
+                              setAccountOpeningBalance(event.target.value)
+                            }
+                            placeholder="R$ 0,00"
+                            inputMode="decimal"
+                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                          />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-2">
+                            <label className="text-xs font-semibold text-[var(--muted)]">
+                              Tipo
+                            </label>
+                            <select
+                              value={accountType}
+                              onChange={(event) =>
+                                setAccountType(event.target.value)
+                              }
+                              className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <option value="checking">Conta corrente</option>
+                              <option value="savings">Poupança</option>
+                              <option value="credit_card">Cartão</option>
+                              <option value="cash">Dinheiro</option>
+                            </select>
+                          </div>
+                          <div className="grid gap-2">
+                            <label className="text-xs font-semibold text-[var(--muted)]">
+                              Visibilidade
+                            </label>
+                            <select
+                              value={accountVisibility}
+                              onChange={(event) =>
+                                setAccountVisibility(event.target.value)
+                              }
+                              className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                            >
+                              <option value="shared">Compartilhada</option>
+                              <option value="private">Privada</option>
+                            </select>
+                          </div>
+                        </div>
+                        {accountError ? (
+                          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            {accountError}
+                          </div>
+                        ) : null}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={closeAccountModal}
+                            className={`${secondaryButton} w-full`}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isCreatingAccount || !activeFamilyId}
+                            className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
+                          >
+                            {isCreatingAccount
+                              ? "Salvando..."
+                              : isEditingAccount
+                                ? "Salvar alterações"
+                                : "Criar conta"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {isBalanceAdjustOpen ? (
+                <div className="fixed inset-0 z-50 flex items-start justify-center px-3 py-4 sm:items-center sm:px-4 sm:py-6">
+                  <button
+                    type="button"
+                    aria-label="Fechar modal"
+                    onClick={closeBalanceAdjust}
+                    className="absolute inset-0 animate-[overlay-in_0.2s_ease-out] bg-slate-900/40 backdrop-blur-sm"
+                  />
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="ajuste-modal-title"
+                    className="relative z-10 w-full max-w-lg animate-[modal-in_0.22s_ease-out] overflow-hidden rounded-3xl border border-[var(--border)] bg-white shadow-[var(--shadow)]"
+                  >
+                    <div className="flex items-start justify-between gap-2 border-b border-[var(--border)] px-5 py-4">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                          Ajuste de saldo
+                        </p>
+                        <h2
+                          id="ajuste-modal-title"
+                          className="mt-1 text-lg font-semibold text-[var(--ink)]"
+                        >
+                          {balanceAdjustAccount?.name ?? "Conta"}
+                        </h2>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeBalanceAdjust}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-white text-[var(--muted)] shadow-sm transition hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                        aria-label="Fechar"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M18 6L6 18" />
+                          <path d="M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="px-5 py-5">
+                      <form className="grid gap-4" onSubmit={handleAdjustBalance}>
+                        <div className="rounded-2xl border border-[var(--border)] bg-slate-50 px-4 py-3 text-sm text-[var(--muted)]">
+                          Saldo atual:{" "}
+                          <span className="font-semibold text-[var(--ink)]">
+                            {currencyFormatter.format(balanceAdjustCurrent)}
+                          </span>{" "}
+                          <span className="text-xs">(até {monthLabel})</span>
+                        </div>
+                        <div className="grid gap-2">
+                          <label className="text-xs font-semibold text-[var(--muted)]">
+                            Saldo desejado
+                          </label>
+                          <input
+                            value={balanceAdjustTarget}
+                            onChange={(event) =>
+                              setBalanceAdjustTarget(event.target.value)
+                            }
+                            placeholder="R$ 0,00"
+                            inputMode="decimal"
+                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                          />
+                        </div>
+                        {balanceAdjustDifference !== null &&
+                        Number.isFinite(balanceAdjustDifference) ? (
+                          <div className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-white px-4 py-3 text-sm">
+                            <span className="text-[var(--muted)]">Diferença</span>
+                            <span
+                              className={`font-semibold ${
+                                balanceAdjustDifference < 0
+                                  ? "text-rose-600"
+                                  : balanceAdjustDifference > 0
+                                    ? "text-emerald-600"
+                                    : "text-[var(--muted)]"
+                              }`}
+                            >
+                              {balanceAdjustDifference < 0 ? "-" : "+"}{" "}
+                              {currencyFormatter.format(
+                                Math.abs(balanceAdjustDifference),
+                              )}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div className="grid gap-2">
+                          <label className="text-xs font-semibold text-[var(--muted)]">
+                            Como ajustar
+                          </label>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBalanceAdjustMethod("opening");
+                                setBalanceAdjustCategoryId("");
+                              }}
+                              className={`rounded-xl border px-4 py-3 text-xs font-semibold transition ${
+                                balanceAdjustMethod === "opening"
+                                  ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                                  : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                              }`}
+                              aria-pressed={balanceAdjustMethod === "opening"}
+                            >
+                              Alterar saldo inicial
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setBalanceAdjustMethod("transaction")}
+                              className={`rounded-xl border px-4 py-3 text-xs font-semibold transition ${
+                                balanceAdjustMethod === "transaction"
+                                  ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                                  : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                              }`}
+                              aria-pressed={balanceAdjustMethod === "transaction"}
+                            >
+                              Criar lançamento
+                            </button>
+                          </div>
+                        </div>
+                        {balanceAdjustMethod === "transaction" ? (
+                          <div className="grid gap-2">
+                            <label className="text-xs font-semibold text-[var(--muted)]">
+                              Categoria do ajuste
+                            </label>
+                            <select
+                              value={balanceAdjustCategoryId}
+                              onChange={(event) =>
+                                setBalanceAdjustCategoryId(event.target.value)
+                              }
+                              disabled={!balanceAdjustType}
+                              className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                            >
+                              <option value="">
+                                Ajuste de saldo (padrão)
+                              </option>
+                              {balanceAdjustCategories.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.name}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="text-xs text-[var(--muted)]">
+                              Se não escolher, criamos a categoria padrão para o tipo
+                              do ajuste.
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-[var(--muted)]">
+                            Essa opção altera o saldo inicial da conta para atingir o
+                            valor desejado.
+                          </p>
+                        )}
+                        {balanceAdjustError ? (
+                          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            {balanceAdjustError}
+                          </div>
+                        ) : null}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={closeBalanceAdjust}
+                            className={`${secondaryButton} w-full`}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isAdjustingBalance}
+                            className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
+                          >
+                            {isAdjustingBalance ? "Ajustando..." : "Confirmar ajuste"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {isFilterCalendarOpen ? (
                 <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
                   <button
@@ -3091,25 +3849,34 @@ export default function HomePage() {
                 <main className="flex flex-col gap-4 sm:gap-6">
                   {isDashboardView ? (
                     <section className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-3 py-4 text-white shadow-sm sm:p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-100">
-                          Saldo nas contas
+                      <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 px-3 py-4 text-white shadow-sm sm:p-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-100">
+                            Saldo nas contas
+                          </p>
+                          <span
+                            aria-label={`Saldo ${balanceIndicator.label}`}
+                            className={`inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold ${balanceIndicator.text}`}
+                          >
+                            <span className={`h-2 w-2 rounded-full ${balanceIndicator.dot}`} />
+                            {balanceIndicator.label}
+                          </span>
+                        </div>
+                        <p className={`mt-2 text-2xl font-semibold ${balanceValueTone}`}>
+                          {balanceDisplay}
                         </p>
-                        <p className="mt-2 text-2xl font-semibold">
-                          {currencyFormatter.format(totalBalance)}
-                        </p>
-                        <p className="mt-1 text-xs text-emerald-100">
+                        <p className="mt-1 text-xs text-sky-100">
                           Até {monthLabel}
                         </p>
                       </div>
-                      <div className="rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 px-3 py-4 text-white shadow-sm sm:p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-orange-100">
+                      <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-3 py-4 text-white shadow-sm sm:p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-100">
                           Receitas
                         </p>
                         <p className="mt-2 text-2xl font-semibold">
                           {currencyFormatter.format(monthlySummary.income)}
                         </p>
-                        <p className="mt-1 text-xs text-orange-100">
+                        <p className="mt-1 text-xs text-emerald-100">
                           Período: {monthLabel}
                         </p>
                       </div>
@@ -3124,21 +3891,30 @@ export default function HomePage() {
                           Período: {monthLabel}
                         </p>
                       </div>
-                      <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 px-3 py-4 text-white shadow-sm sm:p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-100">
-                          Resultado do mês
+                      <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 px-3 py-4 text-white shadow-sm sm:p-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-100">
+                            Resultado do mês
+                          </p>
+                          <span
+                            aria-label={`Resultado ${resultIndicator.label}`}
+                            className={`inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold ${resultIndicator.text}`}
+                          >
+                            <span className={`h-2 w-2 rounded-full ${resultIndicator.dot}`} />
+                            {resultIndicator.label}
+                          </span>
+                        </div>
+                        <p className={`mt-2 text-2xl font-semibold ${resultValueTone}`}>
+                          {resultDisplay}
                         </p>
-                        <p className="mt-2 text-2xl font-semibold">
-                          {currencyFormatter.format(monthResult)}
-                        </p>
-                        <p className="mt-1 text-xs text-sky-100">
+                        <p className="mt-1 text-xs text-amber-100">
                           Período: {monthLabel}
                         </p>
                       </div>
                     </section>
                   ) : null}
 
-                  {!isTransfersView ? (
+                  {!isTransfersView && !isAccountsView ? (
                     <section
                       className={`grid gap-4 sm:gap-6 ${
                         isDashboardView ? "xl:grid-cols-[minmax(0,1fr)_320px]" : ""
@@ -3956,6 +4732,225 @@ export default function HomePage() {
                   </section>
                   ) : null}
 
+                  {isAccountsView ? (
+                    <section className="rounded-3xl border border-[var(--border)] bg-white/80 px-3 py-4 shadow-sm sm:p-6">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                            Contas
+                          </h3>
+                          <p className="mt-2 text-sm text-[var(--muted)]">
+                            Gerencie suas contas e crie lançamentos diretos.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openAccountModal}
+                          className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] transition hover:border-[var(--accent)]"
+                        >
+                          Nova conta
+                        </button>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={openAccountModal}
+                          className="flex min-h-[190px] flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-[var(--border)] bg-white/70 p-6 text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)]"
+                        >
+                          <span className="flex h-12 w-12 items-center justify-center rounded-full border border-current">
+                            <svg
+                              aria-hidden="true"
+                              viewBox="0 0 24 24"
+                              className="h-5 w-5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M12 5v14" />
+                              <path d="M5 12h14" />
+                            </svg>
+                          </span>
+                          <span className="text-sm font-semibold uppercase tracking-[0.2em]">
+                            Nova conta
+                          </span>
+                        </button>
+                        {accounts.map((account) => {
+                          const balance = accountBalances[account.id] ?? 0;
+                          const valueTone =
+                            balance < 0 ? "text-rose-600" : "text-emerald-600";
+                          return (
+                            <div
+                              key={account.id}
+                              className="rounded-3xl border border-[var(--border)] bg-white p-5 shadow-sm"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent-soft)] text-sm font-semibold text-[var(--accent-strong)]">
+                                    {account.name.slice(0, 2).toUpperCase()}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                                      {account.name}
+                                    </p>
+                                    <p className="text-xs text-[var(--muted)]">
+                                      {account.account_type.replace("_", " ")}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div
+                                  className="relative"
+                                  data-account-menu-id={account.id}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setOpenAccountMenuId((prev) =>
+                                        prev === account.id ? null : account.id,
+                                      )
+                                    }
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                                    aria-label="Opções da conta"
+                                    aria-expanded={openAccountMenuId === account.id}
+                                  >
+                                    <svg
+                                      aria-hidden="true"
+                                      viewBox="0 0 24 24"
+                                      className="h-4 w-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <circle cx="12" cy="12" r="1.5" />
+                                      <circle cx="19" cy="12" r="1.5" />
+                                      <circle cx="5" cy="12" r="1.5" />
+                                    </svg>
+                                  </button>
+                                  {openAccountMenuId === account.id ? (
+                                    <div className="absolute right-0 z-20 mt-2 w-44 rounded-2xl border border-[var(--border)] bg-white p-2 text-sm text-[var(--ink)] shadow-lg">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenAccountMenuId(null);
+                                          openAccountEditor(account);
+                                        }}
+                                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold text-[var(--ink)] transition hover:bg-slate-50"
+                                      >
+                                        Editar conta
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenAccountMenuId(null);
+                                          openBalanceAdjust(account.id);
+                                        }}
+                                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold text-[var(--ink)] transition hover:bg-slate-50"
+                                      >
+                                        Ajustar saldo
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className="mt-4 space-y-2 text-sm">
+                                <div className="flex items-center justify-between text-[var(--muted)]">
+                                  <span>Saldo atual</span>
+                                  <span className={`font-semibold ${valueTone}`}>
+                                    {currencyFormatter.format(balance)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+                                  <span>Até {monthLabel}</span>
+                                  <span
+                                    className={
+                                      account.visibility === "private"
+                                        ? "text-amber-600"
+                                        : "text-emerald-600"
+                                    }
+                                  >
+                                    {account.visibility === "private"
+                                      ? "Privada"
+                                      : "Compartilhada"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openTransactionModal("expense", account.id)}
+                                  className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-600 transition hover:border-rose-300"
+                                >
+                                  <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                    className="h-4 w-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M12 19V5" />
+                                    <path d="M18 13l-6 6-6-6" />
+                                  </svg>
+                                  Despesa
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openTransactionModal("income", account.id)}
+                                  className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-600 transition hover:border-emerald-300"
+                                >
+                                  <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                    className="h-4 w-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M12 5v14" />
+                                    <path d="M18 11l-6-6-6 6" />
+                                  </svg>
+                                  Receita
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openTransactionModal("transfer", account.id)}
+                                  className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 text-xs font-semibold text-sky-600 transition hover:border-sky-300"
+                                >
+                                  <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                    className="h-4 w-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M16 3h5v5" />
+                                    <path d="M4 20l5-5" />
+                                    <path d="M21 3l-7 7" />
+                                    <path d="M9 15l-5 5" />
+                                  </svg>
+                                  Transferir
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ) : null}
+
                   {isTransfersView ? (
                     <section className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
                       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -4207,127 +5202,24 @@ export default function HomePage() {
                           Contas
                         </h2>
                         <p className="mt-3 text-sm text-[var(--muted)]">
-                          Crie as contas que vao aparecer no dashboard.
+                          Gerencie todas as contas na aba dedicada.
                         </p>
-                        <div className="mt-4 space-y-3">
-                          {isLoadingAccounts ? (
-                            <p className="text-sm text-[var(--muted)]">
-                              Carregando contas...
-                            </p>
-                          ) : accounts.length === 0 ? (
-                            <p className="text-sm text-[var(--muted)]">
-                              Nenhuma conta criada ainda.
-                            </p>
-                          ) : (
-                            accounts.map((account) => (
-                              <div
-                                key={account.id}
-                                className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3"
-                              >
-                                <p className="text-sm font-semibold text-[var(--ink)]">
-                                  {account.name}
-                                </p>
-                                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
-                                  {account.account_type.replace("_", " ")} ·{" "}
-                                  {account.visibility === "shared"
-                                    ? "Compartilhada"
-                                    : "Privada"}
-                                </p>
-                                <div
-                                  className={`mt-3 flex items-center gap-2 text-sm font-semibold ${
-                                    (accountBalances[account.id] ?? 0) < 0
-                                      ? "text-rose-600"
-                                      : "text-emerald-600"
-                                  }`}
-                                >
-                                  {(accountBalances[account.id] ?? 0) < 0 ? (
-                                    <svg
-                                      aria-hidden="true"
-                                      viewBox="0 0 24 24"
-                                      className="h-4 w-4"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    >
-                                      <path d="M12 19V5" />
-                                      <path d="M18 13l-6 6-6-6" />
-                                    </svg>
-                                  ) : (
-                                    <svg
-                                      aria-hidden="true"
-                                      viewBox="0 0 24 24"
-                                      className="h-4 w-4"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    >
-                                      <path d="M12 5v14" />
-                                      <path d="M18 11l-6-6-6 6" />
-                                    </svg>
-                                  )}
-                                  <span>
-                                    {currencyFormatter.format(
-                                      accountBalances[account.id] ?? 0,
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                        <form
-                          className="mt-4 grid gap-3"
-                          onSubmit={handleCreateAccount}
-                        >
-                          <input
-                            value={accountName}
-                            onChange={(event) =>
-                              setAccountName(event.target.value)
-                            }
-                            placeholder="Ex.: Conta principal"
-                            className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                          />
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <select
-                              value={accountType}
-                              onChange={(event) =>
-                                setAccountType(event.target.value)
-                              }
-                              className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                            >
-                              <option value="checking">Conta corrente</option>
-                              <option value="savings">Poupança</option>
-                              <option value="credit_card">Cartão</option>
-                              <option value="cash">Dinheiro</option>
-                            </select>
-                            <select
-                              value={accountVisibility}
-                              onChange={(event) =>
-                                setAccountVisibility(event.target.value)
-                              }
-                              className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                            >
-                              <option value="shared">Compartilhada</option>
-                              <option value="private">Privada</option>
-                            </select>
-                          </div>
-                          {accountError ? (
-                            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                              {accountError}
-                            </div>
-                          ) : null}
+                        <div className="mt-4 flex flex-col gap-3">
                           <button
-                            type="submit"
-                            disabled={isCreatingAccount || !activeFamilyId}
-                            className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
+                            type="button"
+                            onClick={() => setActiveView("accounts")}
+                            className="inline-flex items-center justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
                           >
-                            {isCreatingAccount ? "Criando..." : "Criar conta"}
+                            Ir para Contas
                           </button>
-                        </form>
+                          <button
+                            type="button"
+                            onClick={openAccountModal}
+                            className="inline-flex items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-500/30 transition hover:bg-[var(--accent-strong)]"
+                          >
+                            Nova conta
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
