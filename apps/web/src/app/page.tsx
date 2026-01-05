@@ -510,9 +510,8 @@ export default function HomePage() {
     }
 
     setIsLoadingBalances(true);
-    const fallback = getMonthRange(getBrazilToday().slice(0, 7));
-    const startDate = range?.startDate || fallback.startDate;
-    const endDate = range?.endDate || fallback.endDate;
+    const startDate = range?.startDate ?? "";
+    const endDate = range?.endDate ?? "";
     const authedSupabase = getAuthedSupabaseClient(accessToken);
     let query = authedSupabase
       .from("transactions")
@@ -653,14 +652,9 @@ export default function HomePage() {
         endDate: activeMonthRange.endDate || undefined,
       },
     );
-    loadAccountBalances(
-      accounts.map((account) => account.id),
-      session.access_token,
-      {
-        startDate: activeMonthRange.startDate || undefined,
-        endDate: activeMonthRange.endDate || undefined,
-      },
-    );
+    loadAccountBalances(accounts.map((account) => account.id), session.access_token, {
+      endDate: activeMonthRange.endDate || undefined,
+    });
   }, [
     accounts,
     activeFamilyId,
@@ -1250,8 +1244,13 @@ export default function HomePage() {
     (membership) => membership.family?.id === activeFamilyId,
   );
   const canCreateTransaction = accounts.length > 0;
-  const monthNet = monthlySummary.income - monthlySummary.expense;
-  const economy = Math.max(monthNet, 0);
+  const monthResult = monthlySummary.income - monthlySummary.expense;
+  const totalBalance = Object.values(accountBalances).reduce((sum, value) => {
+    if (!Number.isFinite(value)) {
+      return sum;
+    }
+    return sum + value;
+  }, 0);
   const isDashboardView = activeView === "dashboard";
   const isTransactionsView = activeView === "transactions";
   const isTransfersView = activeView === "transfers";
@@ -3094,13 +3093,13 @@ export default function HomePage() {
                     <section className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-3 py-4 text-white shadow-sm sm:p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-100">
-                          Saldo total
+                          Saldo nas contas
                         </p>
                         <p className="mt-2 text-2xl font-semibold">
-                          {currencyFormatter.format(monthNet)}
+                          {currencyFormatter.format(totalBalance)}
                         </p>
                         <p className="mt-1 text-xs text-emerald-100">
-                          Período: {monthLabel}
+                          Até {monthLabel}
                         </p>
                       </div>
                       <div className="rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 px-3 py-4 text-white shadow-sm sm:p-4">
@@ -3127,13 +3126,13 @@ export default function HomePage() {
                       </div>
                       <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 px-3 py-4 text-white shadow-sm sm:p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-100">
-                          Economia
+                          Resultado do mês
                         </p>
                         <p className="mt-2 text-2xl font-semibold">
-                          {currencyFormatter.format(economy)}
+                          {currencyFormatter.format(monthResult)}
                         </p>
                         <p className="mt-1 text-xs text-sky-100">
-                          Lançamentos: {monthlySummary.count}
+                          Período: {monthLabel}
                         </p>
                       </div>
                     </section>
@@ -3867,7 +3866,7 @@ export default function HomePage() {
                             Saldo por conta
                           </h3>
                           <span className="text-xs font-semibold text-[var(--muted)]">
-                            {monthLabel}
+                            Até {monthLabel}
                           </span>
                         </div>
                         <div className="mt-4 space-y-3">
