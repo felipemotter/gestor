@@ -3089,10 +3089,10 @@ export default function HomePage() {
                   </form>
                 </section>
               ) : (
-                <main className="flex flex-col gap-6">
+                <main className="flex flex-col gap-4 sm:gap-6">
                   {isDashboardView ? (
-                    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 p-4 text-white shadow-sm">
+                    <section className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-3 py-4 text-white shadow-sm sm:p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-100">
                           Saldo total
                         </p>
@@ -3103,7 +3103,7 @@ export default function HomePage() {
                           Período: {monthLabel}
                         </p>
                       </div>
-                      <div className="rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 p-4 text-white shadow-sm">
+                      <div className="rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 px-3 py-4 text-white shadow-sm sm:p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-orange-100">
                           Receitas
                         </p>
@@ -3114,7 +3114,7 @@ export default function HomePage() {
                           Período: {monthLabel}
                         </p>
                       </div>
-                      <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 p-4 text-white shadow-sm">
+                      <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 px-3 py-4 text-white shadow-sm sm:p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-100">
                           Despesas
                         </p>
@@ -3125,7 +3125,7 @@ export default function HomePage() {
                           Período: {monthLabel}
                         </p>
                       </div>
-                      <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 p-4 text-white shadow-sm">
+                      <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 px-3 py-4 text-white shadow-sm sm:p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-100">
                           Economia
                         </p>
@@ -3141,7 +3141,7 @@ export default function HomePage() {
 
                   {!isTransfersView ? (
                     <section
-                      className={`grid gap-6 ${
+                      className={`grid gap-4 sm:gap-6 ${
                         isDashboardView ? "xl:grid-cols-[minmax(0,1fr)_320px]" : ""
                       }`}
                     >
@@ -3801,13 +3801,13 @@ export default function HomePage() {
                     </div>
 
                     {isDashboardView ? (
-                      <aside className="space-y-6">
-                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
+                      <aside className="space-y-4 sm:space-y-6">
+                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
                         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                           Alertas
                         </h3>
                         <div className="mt-4 space-y-3 text-sm text-[var(--ink)]">
-                          <div className="flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-4 py-3">
+                          <div className="flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3">
                             <span className="mt-1 h-2 w-2 rounded-full bg-rose-500" />
                             <div>
                               <p className="font-semibold">
@@ -3818,7 +3818,7 @@ export default function HomePage() {
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-4 py-3">
+                          <div className="flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3">
                             <span className="mt-1 h-2 w-2 rounded-full bg-amber-500" />
                             <div>
                               <p className="font-semibold">
@@ -3832,11 +3832,11 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
+                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
                         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                           Atalhos rápidos
                         </h3>
-                        <div className="mt-4 flex flex-col gap-3">
+                        <div className="mt-4 flex flex-col gap-2 sm:gap-3">
                           <button
                             type="button"
                             onClick={() => openTransactionModal("expense")}
@@ -3861,7 +3861,7 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
+                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
                         <div className="flex items-center justify-between">
                           <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                             Saldo por conta
@@ -3887,7 +3887,7 @@ export default function HomePage() {
                               return (
                                 <div
                                   key={account.id}
-                                  className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-white px-4 py-3 text-sm"
+                                  className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm sm:px-4 sm:py-3"
                                 >
                                   <div>
                                     <p className="font-semibold text-[var(--ink)]">
@@ -3907,7 +3907,7 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
+                      <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
                         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                           Família ativa
                         </h3>
@@ -3918,7 +3918,7 @@ export default function HomePage() {
                           Papel: {activeMembership?.role ?? "-"}
                         </p>
                         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3">
+                          <div className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3">
                             <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
                               Famílias
                             </p>
@@ -3926,7 +3926,7 @@ export default function HomePage() {
                               {memberships.length}
                             </p>
                           </div>
-                          <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3">
+                          <div className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3">
                             <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
                               Contas
                             </p>
@@ -3934,7 +3934,7 @@ export default function HomePage() {
                               {isLoadingAccounts ? "..." : accounts.length}
                             </p>
                           </div>
-                          <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3">
+                          <div className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3">
                             <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
                               Categorias
                             </p>
@@ -3942,7 +3942,7 @@ export default function HomePage() {
                               {isLoadingCategories ? "..." : categories.length}
                             </p>
                           </div>
-                          <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3">
+                          <div className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3">
                             <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
                               Lançamentos
                             </p>
@@ -4110,8 +4110,8 @@ export default function HomePage() {
 
                   {isDashboardView ? (
                     <>
-                      <section className="grid gap-6 xl:grid-cols-2">
-                        <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
+                      <section className="grid gap-4 sm:gap-6 xl:grid-cols-2">
+                        <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
                           <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                               Despesas por categoria
@@ -4120,12 +4120,12 @@ export default function HomePage() {
                               {monthLabel}
                             </span>
                           </div>
-                          <div className="mt-5 flex flex-wrap items-center gap-6">
+                          <div className="mt-5 flex flex-wrap items-center gap-4 sm:gap-6">
                             <div
-                              className="relative h-32 w-32 rounded-full"
+                              className="relative h-28 w-28 rounded-full sm:h-32 sm:w-32"
                               style={{ background: donutBackground }}
                             >
-                              <div className="absolute inset-4 rounded-full bg-white" />
+                              <div className="absolute inset-3 rounded-full bg-white sm:inset-4" />
                             </div>
                             <div className="flex-1 space-y-3">
                               {topExpenseItems.length === 0 ? (
@@ -4158,7 +4158,7 @@ export default function HomePage() {
                           </div>
                         </div>
 
-                        <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm">
+                        <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
                           <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                               Fluxo de caixa
@@ -4167,10 +4167,10 @@ export default function HomePage() {
                               {monthLabel}
                             </span>
                           </div>
-                          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-white p-4">
+                          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-white p-3 sm:p-4">
                             <svg
                               viewBox="0 0 320 120"
-                              className="h-32 w-full"
+                              className="h-28 w-full sm:h-32"
                               aria-hidden="true"
                             >
                               <path
@@ -4196,13 +4196,13 @@ export default function HomePage() {
                       </section>
 
                       <details
-                        className="rounded-3xl border border-[var(--border)] bg-white/80 p-6 shadow-sm"
+                        className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6"
                         open={accounts.length === 0 || categories.length === 0}
                       >
                         <summary className="cursor-pointer text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                           Cadastros base
                         </summary>
-                        <div className="mt-5 grid gap-6 lg:grid-cols-2">
+                        <div className="mt-5 grid gap-4 sm:gap-6 lg:grid-cols-2">
                       <div>
                         <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                           Contas
@@ -4223,7 +4223,7 @@ export default function HomePage() {
                             accounts.map((account) => (
                               <div
                                 key={account.id}
-                                className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                                className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3"
                               >
                                 <p className="text-sm font-semibold text-[var(--ink)]">
                                   {account.name}
@@ -4350,7 +4350,7 @@ export default function HomePage() {
                             categories.map((category) => (
                               <div
                                 key={category.id}
-                                className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                                className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 sm:px-4 sm:py-3"
                               >
                                 <p className="text-sm font-semibold text-[var(--ink)]">
                                   {category.name}
