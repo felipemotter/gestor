@@ -93,6 +93,7 @@ create table if not exists public.accounts (
   currency text not null default 'BRL',
   visibility public.account_visibility not null default 'shared',
   owner_user_id uuid references auth.users(id),
+  is_archived boolean not null default false,
   opening_balance numeric(14,2) not null default 0,
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
@@ -157,6 +158,109 @@ create index if not exists transactions_posted_at_idx
 
 create index if not exists transactions_source_hash_idx
   on public.transactions (source_hash);
+
+create or replace function public.enforce_balance_adjust_category_usage()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  category_name text;
+begin
+  if new.category_id is null then
+    return new;
+  end if;
+
+  select name into category_name from public.categories where id = new.category_id;
+  if category_name is null then
+    return new;
+  end if;
+
+  if lower(category_name) like lower('Ajuste de saldo%')
+     and coalesce(new.source, '') <> 'adjustment' then
+    raise exception 'Categoria Ajuste de saldo so pode ser usada em ajustes.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_transactions_adjust_category_guard on public.transactions;
+create trigger trg_transactions_adjust_category_guard
+before insert or update of category_id, source on public.transactions
+for each row execute function public.enforce_balance_adjust_category_usage();
+
+create or replace function public.account_balance(account_uuid uuid)
+returns numeric
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(a.opening_balance, 0) +
+    coalesce((
+      select sum(
+        case
+          when t.source = 'transfer' then t.amount
+          when c.category_type = 'income' then t.amount
+          when c.category_type = 'expense' then -t.amount
+          else 0
+        end
+      )
+      from public.transactions t
+      left join public.categories c on c.id = t.category_id
+      where t.account_id = a.id
+    ), 0)
+  from public.accounts a
+  where a.id = account_uuid;
+$$;
+
+create or replace function public.enforce_account_archive_balance()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_balance numeric;
+begin
+  if new.is_archived is true and (old.is_archived is distinct from true) then
+    select public.account_balance(new.id) into current_balance;
+    if current_balance is null then
+      raise exception 'Nao foi possivel calcular saldo da conta.';
+    end if;
+    if abs(current_balance) > 0.009 then
+      raise exception 'Conta precisa estar zerada para arquivar.';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_accounts_archive_balance on public.accounts;
+create trigger trg_accounts_archive_balance
+before update of is_archived on public.accounts
+for each row execute function public.enforce_account_archive_balance();
+
+create or replace function public.prevent_account_delete_with_transactions()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if exists (select 1 from public.transactions where account_id = old.id) then
+    raise exception 'Conta possui lancamentos.';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_accounts_prevent_delete on public.accounts;
+create trigger trg_accounts_prevent_delete
+before delete on public.accounts
+for each row execute function public.prevent_account_delete_with_transactions();
 
 create table if not exists public.transaction_tags (
   transaction_id uuid not null references public.transactions(id) on delete cascade,
