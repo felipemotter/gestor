@@ -581,7 +581,7 @@ export default function HomePage() {
     const authedSupabase = getAuthedSupabaseClient(accessToken);
     const { data, error } = await authedSupabase
       .from("transactions")
-      .select("amount, category:categories(category_type), posted_at")
+      .select("amount, source, category:categories(category_type), posted_at")
       .in("account_id", accountIds)
       .gte("posted_at", startDate)
       .lte("posted_at", endDate);
@@ -597,6 +597,15 @@ export default function HomePage() {
     (data ?? []).forEach((item) => {
       const amountValue = Number(item.amount);
       if (!Number.isFinite(amountValue)) {
+        return;
+      }
+
+      if (item.source === "adjustment") {
+        if (amountValue >= 0) {
+          income += amountValue;
+        } else {
+          expense += Math.abs(amountValue);
+        }
         return;
       }
 
@@ -661,7 +670,9 @@ export default function HomePage() {
       }
 
       let delta = 0;
-      if (item.source === "transfer") {
+      if (item.source === "adjustment") {
+        delta = amountValue;
+      } else if (item.source === "transfer") {
         delta = amountValue;
       } else if (item.category?.category_type === "income") {
         delta = amountValue;
@@ -1586,7 +1597,13 @@ export default function HomePage() {
       let categoryId = balanceAdjustCategoryId;
       if (categoryId) {
         const category = categories.find((item) => item.id === categoryId);
-        if (!category || category.category_type !== requiredType) {
+        if (!category) {
+          setBalanceAdjustError("Selecione uma categoria válida.");
+          setIsAdjustingBalance(false);
+          return;
+        }
+        const isAdjustCategory = isBalanceAdjustCategory(category.name);
+        if (!isAdjustCategory && category.category_type !== requiredType) {
           setBalanceAdjustError(
             "Selecione uma categoria compatível com o tipo do ajuste.",
           );
@@ -1596,11 +1613,29 @@ export default function HomePage() {
       }
       if (!categoryId) {
         const fallbackName = "Ajuste de saldo";
-        const existingCategory = categories.find(
-          (item) =>
-            item.category_type === requiredType &&
-            item.name.toLowerCase() === fallbackName.toLowerCase(),
-        );
+        const fallbackPattern = `${fallbackName}%`;
+        const findExistingCategory = async () => {
+          const localMatch = categories.find((item) =>
+            isBalanceAdjustCategory(item.name),
+          );
+          if (localMatch) {
+            return localMatch;
+          }
+          if (!account.family_id) {
+            return null;
+          }
+          const { data, error } = await authedSupabase
+            .from("categories")
+            .select("id, name, category_type")
+            .eq("family_id", account.family_id)
+            .ilike("name", fallbackPattern);
+          if (error) {
+            return null;
+          }
+          return data?.[0] ?? null;
+        };
+
+        const existingCategory = await findExistingCategory();
         if (existingCategory) {
           categoryId = existingCategory.id;
         } else if (account.family_id) {
@@ -1614,14 +1649,34 @@ export default function HomePage() {
             .select("id")
             .single();
           if (categoryError || !newCategory) {
-            setBalanceAdjustError(
-              categoryError?.message ?? "Não foi possível criar a categoria.",
-            );
-            setIsAdjustingBalance(false);
-            return;
+            const conflictCode =
+              typeof categoryError === "object" && categoryError
+                ? "code" in categoryError
+                  ? categoryError.code
+                  : null
+                : null;
+            if (conflictCode === "23505") {
+              const fallbackCategory = await findExistingCategory();
+              if (fallbackCategory) {
+                categoryId = fallbackCategory.id;
+              } else {
+                setBalanceAdjustError(
+                  "Categoria de ajuste ja existe, selecione-a na lista.",
+                );
+                setIsAdjustingBalance(false);
+                return;
+              }
+            } else {
+              setBalanceAdjustError(
+                categoryError?.message ?? "Não foi possível criar a categoria.",
+              );
+              setIsAdjustingBalance(false);
+              return;
+            }
+          } else {
+            categoryId = newCategory.id;
+            createdCategory = true;
           }
-          categoryId = newCategory.id;
-          createdCategory = true;
         } else {
           setBalanceAdjustError("Não foi possível identificar a família.");
           setIsAdjustingBalance(false);
@@ -1629,7 +1684,7 @@ export default function HomePage() {
         }
       }
 
-      const amountValue = Math.abs(difference);
+      const amountValue = difference;
       const { error: insertError } = await authedSupabase.from("transactions").insert({
         account_id: account.id,
         category_id: categoryId,
@@ -1938,14 +1993,22 @@ export default function HomePage() {
         : "expense"
       : null;
   const balanceAdjustCategories = balanceAdjustType
-    ? categories.filter((category) => category.category_type === balanceAdjustType)
+    ? categories.filter(
+        (category) =>
+          category.category_type === balanceAdjustType ||
+          isBalanceAdjustCategory(category.name),
+      )
     : [];
   useEffect(() => {
     if (!isBalanceAdjustOpen || !balanceAdjustType || !balanceAdjustCategoryId) {
       return;
     }
     const category = categories.find((item) => item.id === balanceAdjustCategoryId);
-    if (!category || category.category_type !== balanceAdjustType) {
+    if (
+      !category ||
+      (!isBalanceAdjustCategory(category.name) &&
+        category.category_type !== balanceAdjustType)
+    ) {
       setBalanceAdjustCategoryId("");
     }
   }, [
@@ -1964,10 +2027,20 @@ export default function HomePage() {
     ? typeFilters
     : [...typeFilterAll];
   const typeFilteredTransactions = transactions.filter((transaction) => {
+    const isAdjustment = transaction.source === "adjustment";
+    const rawValue = Number(transaction.amount);
+    const adjustmentType =
+      isAdjustment && Number.isFinite(rawValue)
+        ? rawValue >= 0
+          ? "income"
+          : "expense"
+        : null;
     const typeValue =
       transaction.source === "transfer"
         ? "transfer"
-        : transaction.category?.category_type;
+        : isAdjustment
+          ? adjustmentType
+          : transaction.category?.category_type;
     if (!typeValue) {
       return false;
     }
@@ -2099,7 +2172,9 @@ export default function HomePage() {
   const isTransfer = transactionType === "transfer";
   const filteredCategories =
     transactionType && !isTransfer
-      ? categories.filter((category) => category.category_type === transactionType)
+      ? categories
+          .filter((category) => category.category_type === transactionType)
+          .filter((category) => !isBalanceAdjustCategory(category.name))
       : [];
   const transactionTypeOptions = [
     { value: "expense", label: "Despesa" },
@@ -4579,10 +4654,12 @@ export default function HomePage() {
                                     {dayTransactions.map((transaction) => {
                                       const isTransferRow =
                                         transaction.source === "transfer";
+                                      const isAdjustRow =
+                                        transaction.source === "adjustment";
                                       const rawValue = Number(transaction.amount);
                                       const isNumeric = Number.isFinite(rawValue);
                                       const displayValue =
-                                        isTransferRow && isNumeric
+                                        (isTransferRow || isAdjustRow) && isNumeric
                                           ? Math.abs(rawValue)
                                           : rawValue;
                                       const formattedValue = isNumeric
@@ -4590,7 +4667,7 @@ export default function HomePage() {
                                         : transaction.amount;
                                       const categoryType =
                                         transaction.category?.category_type;
-                                      const sign = isTransferRow
+                                      const sign = isTransferRow || isAdjustRow
                                         ? rawValue < 0
                                           ? "-"
                                           : "+"
@@ -4600,7 +4677,7 @@ export default function HomePage() {
                                             ? "-"
                                             : "";
                                       const valueTone =
-                                        isTransferRow
+                                        isTransferRow || isAdjustRow
                                           ? rawValue < 0
                                             ? "text-rose-600"
                                             : "text-emerald-600"
@@ -4613,6 +4690,8 @@ export default function HomePage() {
                                         transaction.category?.name ??
                                         (isTransferRow
                                           ? "Transferência"
+                                          : isAdjustRow
+                                            ? "Ajuste de saldo"
                                           : "Sem categoria");
                                       const title =
                                         transaction.description?.trim() ||
@@ -4623,6 +4702,8 @@ export default function HomePage() {
                                       ].join(" | ");
                                       const iconTone = isTransferRow
                                         ? "bg-sky-100 text-sky-600"
+                                        : isAdjustRow
+                                          ? "bg-amber-100 text-amber-600"
                                         : categoryType === "income"
                                           ? "bg-emerald-100 text-emerald-600"
                                           : categoryType === "expense"
@@ -4652,6 +4733,22 @@ export default function HomePage() {
                                                 <path d="M14 4l3 3-3 3" />
                                                 <path d="M17 17H7" />
                                                 <path d="M10 20l-3-3 3-3" />
+                                              </svg>
+                                            ) : isAdjustRow ? (
+                                              <svg
+                                                aria-hidden="true"
+                                                viewBox="0 0 24 24"
+                                                className="h-5 w-5"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                              >
+                                                <path d="M4 6h16" />
+                                                <path d="M4 12h10" />
+                                                <path d="M4 18h7" />
+                                                <circle cx="18" cy="12" r="2" />
                                               </svg>
                                             ) : categoryType === "income" ? (
                                               <svg
@@ -4751,10 +4848,11 @@ export default function HomePage() {
                             ) : (
                               visibleTransactions.map((transaction) => {
                                 const isTransferRow = transaction.source === "transfer";
+                                const isAdjustRow = transaction.source === "adjustment";
                                 const rawValue = Number(transaction.amount);
                                 const isNumeric = Number.isFinite(rawValue);
                                 const displayValue =
-                                  isTransferRow && isNumeric
+                                  (isTransferRow || isAdjustRow) && isNumeric
                                     ? Math.abs(rawValue)
                                     : rawValue;
                                 const formattedValue = isNumeric
@@ -4762,7 +4860,7 @@ export default function HomePage() {
                                   : transaction.amount;
                                 const categoryType =
                                   transaction.category?.category_type;
-                                const sign = isTransferRow
+                                const sign = isTransferRow || isAdjustRow
                                   ? rawValue < 0
                                     ? "-"
                                     : "+"
@@ -4772,7 +4870,7 @@ export default function HomePage() {
                                       ? "-"
                                       : "";
                                 const valueTone =
-                                  isTransferRow
+                                  isTransferRow || isAdjustRow
                                     ? rawValue < 0
                                       ? "text-rose-600"
                                       : "text-emerald-600"
@@ -4783,14 +4881,20 @@ export default function HomePage() {
                                         : "text-[var(--ink)]";
                                 const categoryLabel =
                                   transaction.category?.name ??
-                                  (isTransferRow ? "Transferência" : "Sem categoria");
+                                  (isTransferRow
+                                    ? "Transferência"
+                                    : isAdjustRow
+                                      ? "Ajuste de saldo"
+                                      : "Sem categoria");
                                 const typeLabel = isTransferRow
                                   ? "Transferência"
-                                  : categoryType === "income"
-                                    ? "Receita"
-                                    : categoryType === "expense"
-                                      ? "Despesa"
-                                      : "Outro";
+                                  : isAdjustRow
+                                    ? "Ajuste"
+                                    : categoryType === "income"
+                                      ? "Receita"
+                                      : categoryType === "expense"
+                                        ? "Despesa"
+                                        : "Outro";
 
                                 return (
                                   <tr
