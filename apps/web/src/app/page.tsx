@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getAuthedSupabaseClient, getSupabaseClient } from "@/lib/supabase/client";
+import { bankLogoOptions } from "@/lib/bank-logos";
 
 const supabase = getSupabaseClient();
 const primaryButton =
@@ -86,6 +87,175 @@ const calendarWeekdays = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 
 const typeFilterAll = ["expense", "income", "transfer"] as const;
 
+type AccountIconOption = {
+  key: string;
+  label: string;
+  icon?: ({ className }: { className?: string }) => JSX.Element;
+  imageSrc?: string;
+};
+
+const DEFAULT_ACCOUNT_ICON_BG = "#dbeafe";
+const DEFAULT_ACCOUNT_ICON_COLOR = "#1e40af";
+const baseAccountIconOptions: AccountIconOption[] = [
+  { key: "initials", label: "Iniciais" },
+  {
+    key: "bank",
+    label: "Banco",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3 10h18" />
+        <path d="M4 10l8-5 8 5" />
+        <path d="M5 10v7" />
+        <path d="M9 10v7" />
+        <path d="M15 10v7" />
+        <path d="M19 10v7" />
+        <path d="M3 17h18" />
+      </svg>
+    ),
+  },
+  {
+    key: "wallet",
+    label: "Carteira",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="7" width="18" height="12" rx="3" />
+        <path d="M16 12h4" />
+        <path d="M7 7V5h10" />
+      </svg>
+    ),
+  },
+  {
+    key: "card",
+    label: "Cartão",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="6" width="18" height="12" rx="2" />
+        <path d="M3 10h18" />
+        <path d="M7 15h4" />
+      </svg>
+    ),
+  },
+  {
+    key: "cash",
+    label: "Dinheiro",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="7" width="18" height="10" rx="2" />
+        <circle cx="12" cy="12" r="2.5" />
+        <path d="M7 9h.01" />
+        <path d="M17 15h.01" />
+      </svg>
+    ),
+  },
+  {
+    key: "savings",
+    label: "Poupança",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v8" />
+        <path d="M8 11l4 4 4-4" />
+      </svg>
+    ),
+  },
+  {
+    key: "benefits",
+    label: "Benefícios",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="7" width="18" height="11" rx="2" />
+        <path d="M9 7V5h6v2" />
+        <path d="M3 12h18" />
+      </svg>
+    ),
+  },
+  {
+    key: "invest",
+    label: "Investimento",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 19h16" />
+        <rect x="6" y="10" width="3" height="7" rx="1" />
+        <rect x="11" y="7" width="3" height="10" rx="1" />
+        <rect x="16" y="13" width="3" height="4" rx="1" />
+      </svg>
+    ),
+  },
+];
+const accountIconOptions: AccountIconOption[] = [
+  ...baseAccountIconOptions,
+  ...bankLogoOptions,
+];
+const accountIconLookup = accountIconOptions.reduce<
+  Record<string, AccountIconOption>
+>((acc, option) => {
+  acc[option.key] = option;
+  return acc;
+}, {});
+
 const getMonthRange = (monthValue: string) => {
   const [year, month] = monthValue.split("-").map(Number);
   if (!year || !month) {
@@ -136,6 +306,9 @@ export default function HomePage() {
       visibility: string;
       owner_user_id: string | null;
       opening_balance: number | null;
+      icon_key: string | null;
+      icon_bg: string | null;
+      icon_color: string | null;
       is_archived: boolean;
       created_at: string;
     }>
@@ -179,6 +352,12 @@ export default function HomePage() {
   const [accountType, setAccountType] = useState("checking");
   const [accountVisibility, setAccountVisibility] = useState("shared");
   const [accountOpeningBalance, setAccountOpeningBalance] = useState("");
+  const [accountIconKey, setAccountIconKey] = useState("initials");
+  const [accountIconBg, setAccountIconBg] = useState(DEFAULT_ACCOUNT_ICON_BG);
+  const [accountIconColor, setAccountIconColor] = useState(
+    DEFAULT_ACCOUNT_ICON_COLOR,
+  );
+  const [bankLogoSearch, setBankLogoSearch] = useState("");
   const [accountError, setAccountError] = useState<string | null>(null);
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
   const [categoryName, setCategoryName] = useState("");
@@ -207,6 +386,9 @@ export default function HomePage() {
       visibility: string;
       owner_user_id: string | null;
       opening_balance: number | null;
+      icon_key: string | null;
+      icon_bg: string | null;
+      icon_color: string | null;
       is_archived: boolean;
       created_at: string;
     }>
@@ -388,8 +570,9 @@ export default function HomePage() {
   const loadAccounts = async (familyId: string, accessToken: string) => {
     setIsLoadingAccounts(true);
     const authedSupabase = getAuthedSupabaseClient(accessToken);
-    const baseSelect =
+    const baseSelectLegacy =
       "id, family_id, name, account_type, currency, visibility, owner_user_id, opening_balance, created_at";
+    const baseSelect = `${baseSelectLegacy}, icon_key, icon_bg, icon_color`;
     const selectWithArchive = `${baseSelect}, is_archived`;
     const { data, error } = await authedSupabase
       .from("accounts")
@@ -400,11 +583,18 @@ export default function HomePage() {
 
     if (error) {
       if (error.message?.includes("is_archived")) {
-        const fallback = await authedSupabase
+        let fallback = await authedSupabase
           .from("accounts")
           .select(baseSelect)
           .eq("family_id", familyId)
           .order("created_at", { ascending: true });
+        if (fallback.error && fallback.error.message?.includes("icon_")) {
+          fallback = await authedSupabase
+            .from("accounts")
+            .select(baseSelectLegacy)
+            .eq("family_id", familyId)
+            .order("created_at", { ascending: true });
+        }
         if (fallback.error) {
           setAccounts([]);
           setIsLoadingAccounts(false);
@@ -413,6 +603,32 @@ export default function HomePage() {
         const normalized = (fallback.data ?? []).map((account) => ({
           ...account,
           is_archived: false,
+          icon_key: account.icon_key ?? null,
+          icon_bg: account.icon_bg ?? null,
+          icon_color: account.icon_color ?? null,
+        }));
+        setAccounts(normalized);
+        setIsLoadingAccounts(false);
+        return;
+      }
+      if (error.message?.includes("icon_")) {
+        const fallback = await authedSupabase
+          .from("accounts")
+          .select(`${baseSelectLegacy}, is_archived`)
+          .eq("family_id", familyId)
+          .eq("is_archived", false)
+          .order("created_at", { ascending: true });
+        if (fallback.error) {
+          setAccounts([]);
+          setIsLoadingAccounts(false);
+          return;
+        }
+        const normalized = (fallback.data ?? []).map((account) => ({
+          ...account,
+          is_archived: account.is_archived ?? false,
+          icon_key: null,
+          icon_bg: null,
+          icon_color: null,
         }));
         setAccounts(normalized);
         setIsLoadingAccounts(false);
@@ -426,6 +642,9 @@ export default function HomePage() {
     const normalized = (data ?? []).map((account) => ({
       ...account,
       is_archived: account.is_archived ?? false,
+      icon_key: account.icon_key ?? null,
+      icon_bg: account.icon_bg ?? null,
+      icon_color: account.icon_color ?? null,
     }));
     setAccounts(normalized);
     setIsLoadingAccounts(false);
@@ -434,8 +653,9 @@ export default function HomePage() {
   const loadArchivedAccounts = async (familyId: string, accessToken: string) => {
     setIsLoadingArchivedAccounts(true);
     const authedSupabase = getAuthedSupabaseClient(accessToken);
-    const baseSelect =
+    const baseSelectLegacy =
       "id, family_id, name, account_type, currency, visibility, owner_user_id, opening_balance, created_at";
+    const baseSelect = `${baseSelectLegacy}, icon_key, icon_bg, icon_color`;
     const selectWithArchive = `${baseSelect}, is_archived`;
     const { data, error } = await authedSupabase
       .from("accounts")
@@ -450,6 +670,29 @@ export default function HomePage() {
         setIsLoadingArchivedAccounts(false);
         return;
       }
+      if (error.message?.includes("icon_")) {
+        const fallback = await authedSupabase
+          .from("accounts")
+          .select(`${baseSelectLegacy}, is_archived`)
+          .eq("family_id", familyId)
+          .eq("is_archived", true)
+          .order("created_at", { ascending: true });
+        if (fallback.error) {
+          setArchivedAccounts([]);
+          setIsLoadingArchivedAccounts(false);
+          return;
+        }
+        const normalized = (fallback.data ?? []).map((account) => ({
+          ...account,
+          is_archived: account.is_archived ?? true,
+          icon_key: null,
+          icon_bg: null,
+          icon_color: null,
+        }));
+        setArchivedAccounts(normalized);
+        setIsLoadingArchivedAccounts(false);
+        return;
+      }
       setArchivedAccounts([]);
       setIsLoadingArchivedAccounts(false);
       return;
@@ -458,6 +701,9 @@ export default function HomePage() {
     const normalized = (data ?? []).map((account) => ({
       ...account,
       is_archived: account.is_archived ?? true,
+      icon_key: account.icon_key ?? null,
+      icon_bg: account.icon_bg ?? null,
+      icon_color: account.icon_color ?? null,
     }));
     setArchivedAccounts(normalized);
     setIsLoadingArchivedAccounts(false);
@@ -1117,6 +1363,7 @@ export default function HomePage() {
     setIsAccountModalOpen(false);
     setIsEditingAccount(false);
     setEditingAccountId(null);
+    setBankLogoSearch("");
   };
 
   const openAccountModal = () => {
@@ -1127,6 +1374,10 @@ export default function HomePage() {
     setAccountType("checking");
     setAccountVisibility("shared");
     setAccountOpeningBalance("");
+    setAccountIconKey("initials");
+    setAccountIconBg(DEFAULT_ACCOUNT_ICON_BG);
+    setAccountIconColor(DEFAULT_ACCOUNT_ICON_COLOR);
+    setBankLogoSearch("");
     setIsAccountModalOpen(true);
   };
 
@@ -1142,6 +1393,10 @@ export default function HomePage() {
         ? String(account.opening_balance).replace(".", ",")
         : "",
     );
+    setAccountIconKey(account.icon_key ?? "initials");
+    setAccountIconBg(account.icon_bg ?? DEFAULT_ACCOUNT_ICON_BG);
+    setAccountIconColor(account.icon_color ?? DEFAULT_ACCOUNT_ICON_COLOR);
+    setBankLogoSearch("");
     setIsAccountModalOpen(true);
   };
 
@@ -1475,6 +1730,9 @@ export default function HomePage() {
       visibility: accountVisibility,
       owner_user_id:
         accountVisibility === "private" ? session.user.id : null,
+      icon_key: accountIconKey,
+      icon_bg: accountIconBg,
+      icon_color: accountIconColor,
     };
     if (openingBalanceValue !== null) {
       payload.opening_balance = openingBalanceValue;
@@ -1494,6 +1752,9 @@ export default function HomePage() {
     setAccountType("checking");
     setAccountVisibility("shared");
     setAccountOpeningBalance("");
+    setAccountIconKey("initials");
+    setAccountIconBg(DEFAULT_ACCOUNT_ICON_BG);
+    setAccountIconColor(DEFAULT_ACCOUNT_ICON_COLOR);
     await loadAccounts(activeFamilyId, session.access_token);
     setIsCreatingAccount(false);
     closeAccountModal();
@@ -1528,6 +1789,9 @@ export default function HomePage() {
       visibility: accountVisibility,
       owner_user_id:
         accountVisibility === "private" ? session.user.id : null,
+      icon_key: accountIconKey,
+      icon_bg: accountIconBg,
+      icon_color: accountIconColor,
     };
     if (openingBalanceValue !== null) {
       payload.opening_balance = openingBalanceValue;
@@ -2494,6 +2758,12 @@ export default function HomePage() {
     activeMonthIndex === 11
       ? { year: activeYear + 1, index: 0 }
       : { year: activeYear, index: activeMonthIndex + 1 };
+  const normalizedBankSearch = bankLogoSearch.trim().toLowerCase();
+  const filteredBankLogoOptions = normalizedBankSearch
+    ? bankLogoOptions.filter((option) =>
+        option.label.toLowerCase().includes(normalizedBankSearch),
+      )
+    : bankLogoOptions;
 
   useEffect(() => {
     setMonthPickerYear(activeYear);
@@ -3808,6 +4078,138 @@ export default function HomePage() {
                             placeholder="Ex.: Conta principal"
                             className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                           />
+                        </div>
+                        <div className="grid gap-2">
+                          <label className="text-xs font-semibold text-[var(--muted)]">
+                            Ícone da conta
+                          </label>
+                          <div className="grid gap-4">
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                                Ícones
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {baseAccountIconOptions.map((option) => {
+                                  const isActive = accountIconKey === option.key;
+                                  return (
+                                    <button
+                                      key={option.key}
+                                      type="button"
+                                      onClick={() => setAccountIconKey(option.key)}
+                                      aria-label={option.label}
+                                      aria-pressed={isActive}
+                                      title={option.label}
+                                      className={`flex h-10 w-10 items-center justify-center rounded-full border transition ${
+                                        isActive
+                                          ? "border-[var(--accent)] ring-2 ring-[var(--ring)]"
+                                          : "border-[var(--border)] hover:border-[var(--accent)]"
+                                      }`}
+                                      style={{
+                                        backgroundColor: accountIconBg,
+                                        color: accountIconColor,
+                                      }}
+                                    >
+                                      {option.key === "initials" ? (
+                                        <span className="text-[10px] font-semibold">
+                                          Aa
+                                        </span>
+                                      ) : (
+                                        option.icon?.({ className: "h-4 w-4" })
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            {bankLogoOptions.length ? (
+                              <div>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                                    Bancos
+                                  </p>
+                                  <input
+                                    value={bankLogoSearch}
+                                    onChange={(event) =>
+                                      setBankLogoSearch(event.target.value)
+                                    }
+                                    placeholder="Buscar banco"
+                                    className="w-full max-w-[220px] rounded-full border border-[var(--border)] bg-white px-3 py-1.5 text-xs text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                                  />
+                                </div>
+                                <div className="mt-2 grid max-h-48 grid-cols-6 gap-2 overflow-auto pr-1 sm:grid-cols-8">
+                                  {filteredBankLogoOptions.map((option) => {
+                                    const isActive = accountIconKey === option.key;
+                                    return (
+                                      <button
+                                        key={option.key}
+                                        type="button"
+                                        onClick={() => setAccountIconKey(option.key)}
+                                        aria-label={option.label}
+                                        aria-pressed={isActive}
+                                        title={option.label}
+                                        className={`flex h-10 w-10 items-center justify-center rounded-full border transition ${
+                                          isActive
+                                            ? "border-[var(--accent)] ring-2 ring-[var(--ring)]"
+                                            : "border-[var(--border)] hover:border-[var(--accent)]"
+                                        }`}
+                                        style={{
+                                          backgroundColor: accountIconBg,
+                                        }}
+                                      >
+                                        <img
+                                          src={option.imageSrc}
+                                          alt={option.label}
+                                          className="h-5 w-5 object-contain"
+                                          loading="lazy"
+                                        />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                          <p className="text-xs text-[var(--muted)]">
+                            Escolha um ícone para facilitar a identificação da conta.
+                          </p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-2">
+                            <label className="text-xs font-semibold text-[var(--muted)]">
+                              Cor do fundo
+                            </label>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="color"
+                                value={accountIconBg}
+                                onChange={(event) =>
+                                  setAccountIconBg(event.target.value)
+                                }
+                                className="h-10 w-12 rounded-lg border border-[var(--border)] bg-white shadow-sm"
+                              />
+                              <span className="text-xs font-semibold text-[var(--muted)]">
+                                {accountIconBg.toUpperCase()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="grid gap-2">
+                            <label className="text-xs font-semibold text-[var(--muted)]">
+                              Cor do ícone
+                            </label>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="color"
+                                value={accountIconColor}
+                                onChange={(event) =>
+                                  setAccountIconColor(event.target.value)
+                                }
+                                className="h-10 w-12 rounded-lg border border-[var(--border)] bg-white shadow-sm"
+                              />
+                              <span className="text-xs font-semibold text-[var(--muted)]">
+                                {accountIconColor.toUpperCase()}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                         <div className="grid gap-2">
                           <label className="text-xs font-semibold text-[var(--muted)]">
@@ -5229,6 +5631,15 @@ export default function HomePage() {
                           const isActionLoading = accountActionLoadingId === account.id;
                           const valueTone =
                             balance < 0 ? "text-rose-600" : "text-emerald-600";
+                          const iconKey = account.icon_key ?? "initials";
+                          const iconOption = accountIconLookup[iconKey];
+                          const iconBg = account.icon_bg ?? "var(--accent-soft)";
+                          const iconColor =
+                            account.icon_color ?? "var(--accent-strong)";
+                          const shouldShowInitials =
+                            iconKey === "initials" ||
+                            (!iconOption?.icon && !iconOption?.imageSrc);
+                          const isLogo = Boolean(iconOption?.imageSrc);
                           return (
                             <div
                               key={account.id}
@@ -5236,8 +5647,22 @@ export default function HomePage() {
                             >
                                 <div className="flex items-start justify-between gap-3">
                                 <div className="flex min-w-0 items-center gap-3">
-                                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent-soft)] text-sm font-semibold text-[var(--accent-strong)]">
-                                    {account.name.slice(0, 2).toUpperCase()}
+                                  <span
+                                    className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold"
+                                    style={{ backgroundColor: iconBg, color: iconColor }}
+                                  >
+                                    {isLogo ? (
+                                      <img
+                                        src={iconOption?.imageSrc}
+                                        alt={iconOption?.label ?? account.name}
+                                        className="h-5 w-5 object-contain"
+                                        loading="lazy"
+                                      />
+                                    ) : shouldShowInitials ? (
+                                      account.name.slice(0, 2).toUpperCase()
+                                    ) : (
+                                      iconOption?.icon?.({ className: "h-5 w-5" })
+                                    )}
                                   </span>
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-semibold text-[var(--ink)]">

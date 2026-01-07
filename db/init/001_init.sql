@@ -95,6 +95,9 @@ create table if not exists public.accounts (
   owner_user_id uuid references auth.users(id),
   is_archived boolean not null default false,
   opening_balance numeric(14,2) not null default 0,
+  icon_key text,
+  icon_bg text,
+  icon_color text,
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
 );
