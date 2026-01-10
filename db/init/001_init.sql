@@ -105,12 +105,68 @@ create table if not exists public.accounts (
 create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
   family_id uuid not null references public.families(id) on delete cascade,
+  parent_id uuid references public.categories(id) on delete set null,
   name text not null,
   category_type public.category_type not null default 'expense',
+  icon_key text,
+  icon_bg text,
+  icon_color text,
+  is_archived boolean not null default false,
   created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now(),
-  unique (family_id, name)
+  created_at timestamptz not null default now()
 );
+
+create index if not exists categories_parent_id_idx
+  on public.categories (parent_id);
+
+create unique index if not exists categories_family_root_name_key
+  on public.categories (family_id, name)
+  where parent_id is null;
+
+create unique index if not exists categories_family_parent_name_key
+  on public.categories (family_id, parent_id, name)
+  where parent_id is not null;
+
+create or replace function public.enforce_category_max_depth()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  parent_parent_id uuid;
+begin
+  if new.parent_id is null then
+    return new;
+  end if;
+
+  if new.parent_id = new.id then
+    raise exception 'category parent_id cannot reference itself' using errcode = 'check_violation';
+  end if;
+
+  select parent_id
+    into parent_parent_id
+    from public.categories
+    where id = new.parent_id;
+
+  if parent_parent_id is not null then
+    raise exception 'subcategoria nao pode ter subcategoria' using errcode = 'check_violation';
+  end if;
+
+  if exists (select 1 from public.categories where parent_id = new.id) then
+    raise exception 'categoria com subcategorias nao pode virar subcategoria' using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_categories_max_depth on public.categories;
+
+create trigger trg_categories_max_depth
+before insert or update of parent_id on public.categories
+for each row
+execute function public.enforce_category_max_depth();
 
 create table if not exists public.tags (
   id uuid primary key default gen_random_uuid(),
