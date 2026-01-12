@@ -121,10 +121,20 @@ const DonutChart = ({
   title: string;
   segments: DashboardCategoryDatum[];
 }) => {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const total = segments.reduce((sum, item) => sum + item.value, 0);
-  const radius = 52;
-  const stroke = 14;
+  const radius = 62;
+  const stroke = 16;
   const circumference = 2 * Math.PI * radius;
+  const hoveredSegment = hoveredId
+    ? segments.find((segment) => segment.id === hoveredId) ?? null
+    : null;
+  const centerValue = hoveredSegment ? hoveredSegment.value : total;
+  const centerLabel = hoveredSegment ? hoveredSegment.label : "Total";
+  const centerPct =
+    hoveredSegment && total > 0.009
+      ? (hoveredSegment.value / total) * 100
+      : null;
   const arcs = segments.reduce<{
     offset: number;
     arcs: Array<{ id: string; color: string; dashArray: string; dashOffset: number }>;
@@ -148,7 +158,7 @@ const DonutChart = ({
   ).arcs;
 
   return (
-    <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-5 shadow-sm">
+    <div className="flex h-full min-h-[280px] flex-col rounded-3xl border border-[var(--border)] bg-white/80 p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
           {title}
@@ -162,12 +172,17 @@ const DonutChart = ({
           Sem dados para o período selecionado.
         </p>
       ) : (
-        <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
-          <div className="flex items-center justify-center">
-            <svg width="140" height="140" viewBox="0 0 140 140">
+        <div className="mt-5 flex flex-1 flex-col gap-6 sm:flex-row sm:items-center">
+          <div className="relative flex items-center justify-center">
+            <svg
+              width="180"
+              height="180"
+              viewBox="0 0 180 180"
+              className="h-44 w-44 sm:h-48 sm:w-48"
+            >
               <circle
-                cx="70"
-                cy="70"
+                cx="90"
+                cy="90"
                 r={radius}
                 fill="none"
                 stroke="rgba(148, 163, 184, 0.25)"
@@ -176,37 +191,77 @@ const DonutChart = ({
               {arcs.map((arc) => (
                 <circle
                   key={arc.id}
-                  cx="70"
-                  cy="70"
+                  cx="90"
+                  cy="90"
                   r={radius}
                   fill="none"
                   stroke={arc.color}
-                  strokeWidth={stroke}
+                  strokeWidth={
+                    hoveredId && hoveredId === arc.id ? stroke + 2 : stroke
+                  }
                   strokeDasharray={arc.dashArray}
                   strokeDashoffset={arc.dashOffset}
                   strokeLinecap="round"
-                  transform="rotate(-90 70 70)"
+                  transform="rotate(-90 90 90)"
+                  style={{
+                    cursor: "pointer",
+                    opacity:
+                      hoveredId && hoveredId !== arc.id ? 0.25 : 1,
+                    transition: "opacity 120ms ease-out, stroke-width 120ms ease-out",
+                  }}
+                  onMouseEnter={() => setHoveredId(arc.id)}
+                  onMouseLeave={() => setHoveredId(null)}
                 />
               ))}
             </svg>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="flex flex-col items-center justify-center text-center">
+                <p className="text-base font-semibold text-[var(--ink)]">
+                  {currencyFormatter.format(centerValue)}
+                </p>
+                <p className="mt-0.5 max-w-[140px] truncate text-xs font-semibold text-[var(--muted)]">
+                  {centerLabel}
+                </p>
+                {centerPct !== null ? (
+                  <p className="mt-0.5 text-[11px] font-semibold text-[var(--muted)]">
+                    {centerPct.toFixed(2)}%
+                  </p>
+                ) : null}
+              </div>
+            </div>
           </div>
           <div className="min-w-0 flex-1 space-y-3">
-            {segments.map((segment) => (
-              <div key={segment.id} className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: segment.color }}
-                  />
-                  <span className="truncate text-sm font-semibold text-[var(--ink)]">
-                    {segment.label}
+            {segments.map((segment) => {
+              const isActive = hoveredId === segment.id;
+              return (
+                <button
+                  key={segment.id}
+                  type="button"
+                  onMouseEnter={() => setHoveredId(segment.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  onFocus={() => setHoveredId(segment.id)}
+                  onBlur={() => setHoveredId(null)}
+                  className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-2 text-left text-sm transition ${
+                    isActive
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+                      : "border-[var(--border)] bg-white hover:border-[var(--accent)]"
+                  }`}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: segment.color }}
+                    />
+                    <span className="truncate font-semibold text-[var(--ink)]">
+                      {segment.label}
+                    </span>
+                  </div>
+                  <span className="shrink-0 font-semibold text-[var(--ink)]">
+                    {currencyFormatter.format(segment.value)}
                   </span>
-                </div>
-                <span className="shrink-0 text-sm font-semibold text-[var(--ink)]">
-                  {currencyFormatter.format(segment.value)}
-                </span>
-              </div>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -256,7 +311,7 @@ const CashflowChart = ({
     last < 0 ? "text-rose-600" : last > 0 ? "text-emerald-600" : "text-slate-600";
 
   return (
-    <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-5 shadow-sm">
+    <div className="flex h-full min-h-[280px] flex-col rounded-3xl border border-[var(--border)] bg-white/80 p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
           {title}
@@ -270,10 +325,10 @@ const CashflowChart = ({
           Sem dados para o período selecionado.
         </p>
       ) : (
-        <div className="mt-5 overflow-hidden rounded-2xl border border-[var(--border)] bg-white p-3">
+        <div className="mt-5 flex-1 overflow-hidden rounded-2xl border border-[var(--border)] bg-white p-3">
           <svg
             viewBox={`0 0 ${width} ${height}`}
-            className="h-36 w-full"
+            className="h-44 w-full sm:h-48"
             preserveAspectRatio="none"
           >
             <line
@@ -1633,26 +1688,62 @@ export default function HomePage() {
         return;
       }
 
-      const categoryColorFallback = [
-        "#2563EB",
-        "#0EA5E9",
-        "#10B981",
-        "#F97316",
-        "#EC4899",
-        "#8B5CF6",
-        "#14B8A6",
-        "#F59E0B",
-      ];
-      let fallbackIndex = 0;
-
-      const pickColor = (id: string, bg?: string | null, color?: string | null) => {
-        const candidate = bg || color;
-        if (candidate) {
-          return candidate;
+      const hslToHex = (hue: number, saturation: number, lightness: number) => {
+        const s = saturation / 100;
+        const l = lightness / 100;
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+        const m = l - c / 2;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        if (hue < 60) {
+          r = c;
+          g = x;
+        } else if (hue < 120) {
+          r = x;
+          g = c;
+        } else if (hue < 180) {
+          g = c;
+          b = x;
+        } else if (hue < 240) {
+          g = x;
+          b = c;
+        } else if (hue < 300) {
+          r = x;
+          b = c;
+        } else {
+          r = c;
+          b = x;
         }
-        const chosen = categoryColorFallback[fallbackIndex % categoryColorFallback.length];
-        fallbackIndex += 1;
-        return chosen;
+        const toByte = (value: number) =>
+          Math.round((value + m) * 255)
+            .toString(16)
+            .padStart(2, "0");
+        return `#${toByte(r)}${toByte(g)}${toByte(b)}`.toUpperCase();
+      };
+
+      const stableColorForId = (id: string) => {
+        let hash = 0;
+        for (let index = 0; index < id.length; index += 1) {
+          hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
+        }
+        const hue = hash % 360;
+        return hslToHex(hue, 72, 48);
+      };
+
+      const pickColor = (
+        id: string,
+        bg?: string | null,
+        color?: string | null,
+      ) => {
+        if (bg && bg !== DEFAULT_CATEGORY_ICON_BG) {
+          return bg;
+        }
+        if (color && color !== DEFAULT_CATEGORY_ICON_COLOR) {
+          return color;
+        }
+        return stableColorForId(id);
       };
 
       const expenseMap = new Map<string, DashboardCategoryDatum>();
@@ -6415,7 +6506,7 @@ export default function HomePage() {
                       </div>
                     </section>
 
-                    <section className="grid gap-4 sm:gap-6 xl:grid-cols-3">
+                    <section className="grid items-stretch gap-4 sm:gap-6 xl:grid-cols-3">
                       <div className={isLoadingDashboardAnalytics ? "opacity-60" : ""}>
                         <DonutChart
                           title="Despesas por categoria"
