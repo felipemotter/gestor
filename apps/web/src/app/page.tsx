@@ -28,6 +28,12 @@ const currencyNoCentsFormatter = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
   maximumFractionDigits: 0,
 });
+
+const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: BRAZIL_TZ,
+});
 const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
   month: "2-digit",
@@ -79,6 +85,9 @@ const parseDateValue = (value: string) => {
   return new Date(value);
 };
 
+const subtractDaysFromBrazilDate = (value: string, offset: number) =>
+  addDaysToBrazilDate(value, -offset);
+
 type DashboardCategoryDatum = {
   id: string;
   label: string;
@@ -89,6 +98,16 @@ type DashboardCategoryDatum = {
 type DashboardCashflowPoint = {
   date: string;
   value: number;
+};
+
+type StatementRow = {
+  id: string;
+  posted_at: string;
+  occurred_time: string | null;
+  description: string | null;
+  label: string;
+  delta: number;
+  balance_after: number;
 };
 
 const formatCompactCurrency = (value: number) =>
@@ -685,7 +704,12 @@ export default function HomePage() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<
-    "dashboard" | "transactions" | "transfers" | "accounts" | "categories"
+    | "dashboard"
+    | "transactions"
+    | "transfers"
+    | "accounts"
+    | "categories"
+    | "statement"
   >("dashboard");
   const [activeMonth, setActiveMonth] = useState(() =>
     getBrazilToday().slice(0, 7),
@@ -872,6 +896,7 @@ export default function HomePage() {
   const [transactionType, setTransactionType] = useState("expense");
   const [transactionAmount, setTransactionAmount] = useState("");
   const [transactionDescription, setTransactionDescription] = useState("");
+  const [transactionTime, setTransactionTime] = useState("");
   const [transactionDate, setTransactionDate] = useState(() =>
     getBrazilToday(),
   );
@@ -893,6 +918,15 @@ export default function HomePage() {
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+  const [statementAccountId, setStatementAccountId] = useState("");
+  const [statementStartDate, setStatementStartDate] = useState("");
+  const [statementEndDate, setStatementEndDate] = useState("");
+  const [statementUseMonthRange, setStatementUseMonthRange] = useState(true);
+  const [statementRows, setStatementRows] = useState<StatementRow[]>([]);
+  const [statementOpeningBalance, setStatementOpeningBalance] = useState(0);
+  const [statementClosingBalance, setStatementClosingBalance] = useState(0);
+  const [isLoadingStatement, setIsLoadingStatement] = useState(false);
+  const [statementError, setStatementError] = useState<string | null>(null);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [filterAccountId, setFilterAccountId] = useState("");
   const [filterCategoryId, setFilterCategoryId] = useState("");
@@ -916,6 +950,9 @@ export default function HomePage() {
   const [filterCalendarTarget, setFilterCalendarTarget] = useState<
     "start" | "end" | null
   >(null);
+  const [filterCalendarContext, setFilterCalendarContext] = useState<
+    "transactions" | "statement"
+  >("transactions");
   const [filterCalendarTempDate, setFilterCalendarTempDate] = useState(() =>
     getBrazilToday(),
   );
@@ -2378,18 +2415,19 @@ export default function HomePage() {
     setAccountActionLoadingId(null);
   };
 
-  const openTransactionModal = (
-    nextType: string = "expense",
-    accountId?: string,
-  ) => {
-    setTransactionError(null);
-    setTransactionDestinationAccountId("");
-    setTransactionCategoryId("");
-    setTransactionType(nextType);
-    if (accountId) {
-      setTransactionAccountId(accountId);
-    }
-    setDatePreset("today");
+	  const openTransactionModal = (
+	    nextType: string = "expense",
+	    accountId?: string,
+	  ) => {
+	    setTransactionError(null);
+	    setTransactionDestinationAccountId("");
+	    setTransactionCategoryId("");
+	    setTransactionType(nextType);
+	    setTransactionTime("");
+	    if (accountId) {
+	      setTransactionAccountId(accountId);
+	    }
+	    setDatePreset("today");
     const today = getBrazilToday();
     setTransactionDate(today);
     setCalendarTempDate(today);
@@ -2399,6 +2437,14 @@ export default function HomePage() {
   const openAccountTransactions = (accountId: string) => {
     setActiveView("transactions");
     setFilterAccountId(accountId);
+    setIsMobileMenuOpen(false);
+  };
+
+  const openAccountStatement = (accountId: string) => {
+    setStatementUseMonthRange(true);
+    resetStatementDateRange();
+    setStatementAccountId(accountId);
+    setActiveView("statement");
     setIsMobileMenuOpen(false);
   };
 
@@ -2492,6 +2538,40 @@ export default function HomePage() {
     setFilterEndDate(endDate);
   };
 
+  const resetStatementDateRange = () => {
+    const { startDate, endDate } = getMonthRange(activeMonth);
+    if (!startDate || !endDate) {
+      return;
+    }
+    setStatementUseMonthRange(true);
+    setStatementStartDate(startDate);
+    setStatementEndDate(endDate);
+  };
+
+  const handleStatementStartDateChange = (value: string) => {
+    if (!value) {
+      resetStatementDateRange();
+      return;
+    }
+    setStatementUseMonthRange(false);
+    setStatementStartDate(value);
+    if (statementEndDate && value > statementEndDate) {
+      setStatementEndDate(value);
+    }
+  };
+
+  const handleStatementEndDateChange = (value: string) => {
+    if (!value) {
+      resetStatementDateRange();
+      return;
+    }
+    setStatementUseMonthRange(false);
+    setStatementEndDate(value);
+    if (statementStartDate && value < statementStartDate) {
+      setStatementStartDate(value);
+    }
+  };
+
   const handleFilterStartDateChange = (value: string) => {
     if (!value) {
       resetFilterDateRange();
@@ -2514,12 +2594,19 @@ export default function HomePage() {
     }
   };
 
-  const openFilterCalendar = (target: "start" | "end") => {
+  const openFilterCalendar = (
+    target: "start" | "end",
+    context: "transactions" | "statement" = "transactions",
+  ) => {
     const { startDate, endDate } = getMonthRange(activeMonth);
+    const [contextStart, contextEnd] =
+      context === "statement"
+        ? [statementStartDate, statementEndDate]
+        : [filterStartDate, filterEndDate];
     const fallbackDate =
       target === "start"
-        ? filterStartDate || startDate || getBrazilToday()
-        : filterEndDate || endDate || getBrazilToday();
+        ? contextStart || startDate || getBrazilToday()
+        : contextEnd || endDate || getBrazilToday();
     const fallbackParts = getDateParts(fallbackDate);
     if (fallbackParts) {
       setFilterCalendarMonth(fallbackParts.monthIndex);
@@ -2527,6 +2614,7 @@ export default function HomePage() {
     }
     setFilterCalendarTempDate(fallbackDate);
     setFilterCalendarTarget(target);
+    setFilterCalendarContext(context);
     setIsFilterCalendarOpen(true);
   };
 
@@ -2540,11 +2628,15 @@ export default function HomePage() {
       closeFilterCalendar();
       return;
     }
-    if (filterCalendarTarget === "start") {
-      handleFilterStartDateChange(filterCalendarTempDate);
-    } else {
-      handleFilterEndDateChange(filterCalendarTempDate);
-    }
+    const handler =
+      filterCalendarContext === "statement"
+        ? filterCalendarTarget === "start"
+          ? handleStatementStartDateChange
+          : handleStatementEndDateChange
+        : filterCalendarTarget === "start"
+          ? handleFilterStartDateChange
+          : handleFilterEndDateChange;
+    handler(filterCalendarTempDate);
     closeFilterCalendar();
   };
 
@@ -3158,49 +3250,54 @@ export default function HomePage() {
               destinationAccount?.name ?? "conta"
             })`
           : `Transferência para ${destinationAccount?.name ?? "conta"}`;
-      const incomingDescription =
-        baseDescription.length > 0
-          ? `${baseDescription} (Transferência de ${originAccount?.name ?? "conta"})`
-          : `Transferência de ${originAccount?.name ?? "conta"}`;
+	      const incomingDescription =
+	        baseDescription.length > 0
+	          ? `${baseDescription} (Transferência de ${originAccount?.name ?? "conta"})`
+	          : `Transferência de ${originAccount?.name ?? "conta"}`;
+	      const occurredTimeValue = transactionTime.trim() || null;
 
-      const { error } = await supabase.from("transactions").insert([
-        {
-          account_id: transactionAccountId,
-          category_id: null,
-          amount: -amountValue,
-          currency: "BRL",
-          description: outgoingDescription,
-          posted_at: transactionDate,
-          source: "transfer",
-          external_id: transferId,
-        },
-        {
-          account_id: transactionDestinationAccountId,
-          category_id: null,
-          amount: amountValue,
-          currency: "BRL",
-          description: incomingDescription,
-          posted_at: transactionDate,
-          source: "transfer",
-          external_id: transferId,
-        },
-      ]);
+	      const { error } = await supabase.from("transactions").insert([
+	        {
+	          account_id: transactionAccountId,
+	          category_id: null,
+	          amount: -amountValue,
+	          currency: "BRL",
+	          description: outgoingDescription,
+	          posted_at: transactionDate,
+	          occurred_time: occurredTimeValue,
+	          source: "transfer",
+	          external_id: transferId,
+	        },
+	        {
+	          account_id: transactionDestinationAccountId,
+	          category_id: null,
+	          amount: amountValue,
+	          currency: "BRL",
+	          description: incomingDescription,
+	          posted_at: transactionDate,
+	          occurred_time: occurredTimeValue,
+	          source: "transfer",
+	          external_id: transferId,
+	        },
+	      ]);
       if (error) {
         insertError = error;
       }
-    } else {
-      const { error } = await supabase.from("transactions").insert({
-        account_id: transactionAccountId,
-        category_id: transactionCategoryId,
-        amount: amountValue,
-        currency: "BRL",
-        description: transactionDescription.trim() || null,
-        posted_at: transactionDate,
-      });
-      if (error) {
-        insertError = error;
-      }
-    }
+	    } else {
+	      const occurredTimeValue = transactionTime.trim() || null;
+	      const { error } = await supabase.from("transactions").insert({
+	        account_id: transactionAccountId,
+	        category_id: transactionCategoryId,
+	        amount: amountValue,
+	        currency: "BRL",
+	        description: transactionDescription.trim() || null,
+	        posted_at: transactionDate,
+	        occurred_time: occurredTimeValue,
+	      });
+	      if (error) {
+	        insertError = error;
+	      }
+	    }
 
     if (insertError) {
       setTransactionError(insertError.message);
@@ -3313,7 +3410,192 @@ export default function HomePage() {
   const isTransactionsView = activeView === "transactions";
   const isTransfersView = activeView === "transfers";
   const isAccountsView = activeView === "accounts";
+  const isStatementView = activeView === "statement";
   const isCategoriesView = activeView === "categories";
+
+  useEffect(() => {
+    if (!isStatementView) {
+      return;
+    }
+    if (!statementUseMonthRange) {
+      return;
+    }
+    const { startDate, endDate } = getMonthRange(activeMonth);
+    if (!startDate || !endDate) {
+      return;
+    }
+    setStatementStartDate(startDate);
+    setStatementEndDate(endDate);
+  }, [activeMonth, isStatementView, statementUseMonthRange]);
+
+  useEffect(() => {
+    if (!isStatementView) {
+      return;
+    }
+    if (!activeFamilyId || !session?.access_token) {
+      return;
+    }
+    if (!statementAccountId) {
+      setStatementRows([]);
+      setStatementOpeningBalance(0);
+      setStatementClosingBalance(0);
+      return;
+    }
+
+    const monthRange = getMonthRange(activeMonth);
+    const startDate = statementStartDate || monthRange.startDate;
+    const endDate = statementEndDate || monthRange.endDate;
+    if (!startDate || !endDate) {
+      return;
+    }
+
+    type StatementQueryRow = {
+      id: string;
+      amount: string | number;
+      description: string | null;
+      posted_at: string;
+      occurred_time: string | null;
+      created_at: string;
+      source: string | null;
+      account: { name: string } | null;
+      category: {
+        id: string;
+        name: string;
+        category_type: string;
+        parent_id: string | null;
+      } | null;
+    };
+
+    let cancelled = false;
+    const loadStatement = async () => {
+      setIsLoadingStatement(true);
+      setStatementError(null);
+
+      const startMinusOne = subtractDaysFromBrazilDate(startDate, 1);
+      const { data: opening, error: openingError } = await supabase
+        .rpc("account_balance_at", {
+          account_uuid: statementAccountId,
+          at_date: startMinusOne,
+        })
+        .single();
+
+      if (cancelled) {
+        return;
+      }
+
+      if (openingError) {
+        setStatementError(openingError.message);
+        setIsLoadingStatement(false);
+        return;
+      }
+
+      const openingBalanceValue = Number(
+        typeof opening === "number" || typeof opening === "string" ? opening : 0,
+      );
+      const { data, error } = await supabase
+        .from("transactions")
+        .select(
+          "id, amount, description, posted_at, occurred_time, created_at, source, account:accounts(name), category:categories(id, name, category_type, parent_id)",
+        )
+        .eq("account_id", statementAccountId)
+        .gte("posted_at", startDate)
+        .lte("posted_at", endDate)
+        .order("posted_at", { ascending: true })
+        .order("occurred_time", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: true })
+        .range(0, 4999);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (error) {
+        setStatementError(error.message);
+        setIsLoadingStatement(false);
+        return;
+      }
+
+      let running = Number.isFinite(openingBalanceValue) ? openingBalanceValue : 0;
+      const categoryIndex = [...categories, ...archivedCategories].reduce<
+        Record<string, { id: string; name: string; parent_id: string | null }>
+      >((acc, category) => {
+        acc[category.id] = {
+          id: category.id,
+          name: category.name,
+          parent_id: category.parent_id,
+        };
+        return acc;
+      }, {});
+      const getStatementCategoryLabel = (category: StatementQueryRow["category"]) => {
+        if (!category?.id) {
+          return "Sem categoria";
+        }
+        if (!category.parent_id) {
+          return category.name;
+        }
+        const parent = categoryIndex[category.parent_id];
+        return parent ? `${parent.name} / ${category.name}` : category.name;
+      };
+
+      const rows: StatementRow[] = ((data ?? []) as unknown as StatementQueryRow[]).map(
+        (item) => {
+        const amountValue = Number(item.amount);
+        const isNumeric = Number.isFinite(amountValue);
+        const source = item.source;
+        const categoryType = item.category?.category_type ?? null;
+
+        const delta = !isNumeric
+          ? 0
+          : source === "transfer" || source === "adjustment"
+            ? amountValue
+            : categoryType === "income"
+              ? amountValue
+              : categoryType === "expense"
+                ? -amountValue
+                : 0;
+
+        running += delta;
+
+        const label =
+          source === "transfer"
+            ? "Transferência"
+            : source === "adjustment"
+              ? "Ajuste"
+              : getStatementCategoryLabel(item.category);
+
+        const occurredTime = item.occurred_time;
+        return {
+          id: item.id,
+          posted_at: item.posted_at,
+          occurred_time: occurredTime ?? null,
+          description: item.description,
+          label,
+          delta,
+          balance_after: running,
+        };
+      });
+
+      setStatementOpeningBalance(openingBalanceValue);
+      setStatementRows(rows);
+      setStatementClosingBalance(running);
+      setIsLoadingStatement(false);
+    };
+
+    void loadStatement();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeFamilyId,
+    activeMonth,
+    isStatementView,
+    session?.access_token,
+    statementAccountId,
+    statementStartDate,
+    statementEndDate,
+    categories,
+    archivedCategories,
+  ]);
   const effectiveSearchQuery = isTransactionsView ? searchQuery : "";
   const normalizedSearch = effectiveSearchQuery.trim().toLowerCase();
   const effectiveTypeFilters = isTransactionsView
@@ -5071,11 +5353,11 @@ export default function HomePage() {
                             )}
                           </div>
 
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="flex flex-col gap-2">
-                              <label className="text-xs font-semibold text-[var(--muted)]">
-                                Valor
-                              </label>
+	                          <div className="grid gap-4 sm:grid-cols-2">
+	                            <div className="flex flex-col gap-2">
+	                              <label className="text-xs font-semibold text-[var(--muted)]">
+	                                Valor
+	                              </label>
                               <div className="relative">
                                 <svg
                                   aria-hidden="true"
@@ -5097,12 +5379,12 @@ export default function HomePage() {
                                   inputMode="decimal"
                                   className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                                 />
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <label className="text-xs font-semibold text-[var(--muted)]">
-                                Data
-                              </label>
+	                              </div>
+	                            </div>
+	                            <div className="flex flex-col gap-2">
+	                              <label className="text-xs font-semibold text-[var(--muted)]">
+	                                Data
+	                              </label>
                               <div className="grid gap-2">
                                 <div
                                   role="group"
@@ -5150,8 +5432,38 @@ export default function HomePage() {
                                     </svg>
                                   </button>
                                 ) : null}
-                            </div>
-                          </div>
+	                            </div>
+	                          </div>
+
+	                          <div className="flex flex-col gap-2">
+	                            <label className="text-xs font-semibold text-[var(--muted)]">
+	                              Hora (opcional)
+	                            </label>
+	                            <div className="relative">
+	                              <svg
+	                                aria-hidden="true"
+	                                viewBox="0 0 24 24"
+	                                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+	                                fill="none"
+	                                stroke="currentColor"
+	                                strokeWidth="1.5"
+	                              >
+	                                <circle cx="12" cy="12" r="8" />
+	                                <path d="M12 7v6l3 2" />
+	                              </svg>
+	                              <input
+	                                value={transactionTime}
+	                                onChange={(event) => setTransactionTime(event.target.value)}
+	                                type="time"
+	                                step="60"
+	                                placeholder="HH:MM"
+	                                className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+	                              />
+	                            </div>
+	                            <p className="text-xs text-[var(--muted)]">
+	                              Usado apenas no extrato para ordenar lançamentos do mesmo dia.
+	                            </p>
+	                          </div>
                           </div>
 
                           <div className="flex flex-col gap-2">
@@ -6092,7 +6404,13 @@ export default function HomePage() {
                   <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-3xl border border-[var(--border)] bg-white shadow-[var(--shadow)]">
                     <div className="-mx-px -mt-px rounded-t-3xl bg-[var(--accent)] px-5 py-4 text-white">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                        {filterCalendarTarget === "end" ? "Data final" : "Data inicial"}
+                        {filterCalendarContext === "statement"
+                          ? filterCalendarTarget === "end"
+                            ? "Data final do extrato"
+                            : "Data inicial do extrato"
+                          : filterCalendarTarget === "end"
+                            ? "Data final"
+                            : "Data inicial"}
                       </p>
                       <p className="mt-1 text-lg font-semibold">
                         {filterCalendarSelectedLabel}
@@ -7554,13 +7872,24 @@ export default function HomePage() {
                                         <circle cx="5" cy="12" r="1.5" />
                                       </svg>
                                     </button>
-                                    {openAccountMenuId === account.id ? (
-                                      <div className="absolute right-0 z-20 mt-2 w-44 rounded-2xl border border-[var(--border)] bg-white p-2 text-sm text-[var(--ink)] shadow-lg">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setOpenAccountMenuId(null);
-                                            openAccountEditor(account);
+	                                    {openAccountMenuId === account.id ? (
+	                                      <div className="absolute right-0 z-20 mt-2 w-44 rounded-2xl border border-[var(--border)] bg-white p-2 text-sm text-[var(--ink)] shadow-lg">
+	                                        <button
+	                                          type="button"
+	                                          onClick={() => {
+	                                            setOpenAccountMenuId(null);
+	                                            openAccountStatement(account.id);
+	                                          }}
+	                                          disabled={isActionLoading}
+	                                          className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold text-[var(--ink)] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+	                                        >
+	                                          Ver extrato
+	                                        </button>
+	                                        <button
+	                                          type="button"
+	                                          onClick={() => {
+	                                            setOpenAccountMenuId(null);
+	                                            openAccountEditor(account);
                                           }}
                                           disabled={isActionLoading}
                                           className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold text-[var(--ink)] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -7787,6 +8116,245 @@ export default function HomePage() {
                           </div>
                         </div>
                       ) : null}
+                    </section>
+                  ) : null}
+
+                  {isStatementView ? (
+                    <section className="rounded-3xl border border-[var(--border)] bg-white/80 px-3 py-4 shadow-sm sm:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+                            Extrato
+                          </h3>
+                          <p className="mt-2 truncate text-sm font-semibold text-[var(--ink)]">
+                            {statementAccountId
+                              ? accounts.find((a) => a.id === statementAccountId)
+                                  ?.name ?? "Conta"
+                              : "Selecione uma conta"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveView("accounts")}
+                          className="inline-flex items-center justify-center rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)]"
+                        >
+                          Voltar
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                        <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3 shadow-sm">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                            Conta
+                          </p>
+                          <select
+                            value={statementAccountId}
+                            onChange={(event) =>
+                              setStatementAccountId(event.target.value)
+                            }
+                            className="mt-2 h-10 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm font-semibold text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                          >
+                            <option value="">Selecione a conta</option>
+                            {accounts.map((account) => (
+                              <option key={account.id} value={account.id}>
+                                {account.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3 shadow-sm">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                            Período
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openFilterCalendar("start", "statement")}
+                              aria-label="Selecionar data inicial do extrato"
+                              className="flex flex-1 items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
+                            >
+                              <span className="truncate">
+                                {statementStartDate
+                                  ? formatDate(statementStartDate)
+                                  : "Data inicial"}
+                              </span>
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4 text-[var(--muted)]"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <rect x="3" y="4" width="18" height="18" rx="2" />
+                                <path d="M16 2v4M8 2v4M3 10h18" />
+                              </svg>
+                            </button>
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                              até
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => openFilterCalendar("end", "statement")}
+                              aria-label="Selecionar data final do extrato"
+                              className="flex flex-1 items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
+                            >
+                              <span className="truncate">
+                                {statementEndDate
+                                  ? formatDate(statementEndDate)
+                                  : "Data final"}
+                              </span>
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4 text-[var(--muted)]"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <rect x="3" y="4" width="18" height="18" rx="2" />
+                                <path d="M16 2v4M8 2v4M3 10h18" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={resetStatementDateRange}
+                              className="ml-auto text-xs font-semibold text-[var(--accent-strong)] transition hover:text-[var(--accent)]"
+                            >
+                              Mês selecionado
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {statementError ? (
+                        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                          {statementError}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-4 overflow-hidden rounded-3xl border border-[var(--border)] bg-white shadow-sm">
+                        {isLoadingStatement ? (
+                          <div className="p-4 text-sm text-[var(--muted)]">
+                            Carregando extrato...
+                          </div>
+                        ) : statementRows.length === 0 ? (
+                          <div className="p-4 text-sm text-[var(--muted)]">
+                            Nenhum lançamento no período.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="hidden grid-cols-[96px_64px_minmax(0,1fr)_140px_140px] gap-3 border-b border-[var(--border)] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)] sm:grid">
+                              <span>Data</span>
+                              <span>Hora</span>
+                              <span>Lançamento</span>
+                              <span className="text-right">Valor</span>
+                              <span className="text-right">Saldo</span>
+                            </div>
+                            <div className="divide-y divide-[var(--border)]">
+                              <div className="bg-slate-50/60 px-4 py-3">
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[96px_64px_minmax(0,1fr)_140px_140px] sm:items-center sm:gap-3">
+                                  <div className="text-xs font-semibold text-[var(--ink)]">
+                                    {statementStartDate
+                                      ? formatDate(statementStartDate)
+                                      : "--"}
+                                  </div>
+                                  <div className="text-xs font-semibold text-[var(--muted)]">
+                                    --
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                                      Saldo inicial
+                                    </p>
+                                    <p className="truncate text-xs text-[var(--muted)]">
+                                      Antes do período selecionado
+                                    </p>
+                                  </div>
+                                  <div className="text-right text-sm font-semibold text-[var(--muted)]">
+                                    —
+                                  </div>
+                                  <div className="text-right text-sm font-semibold text-[var(--ink)]">
+                                    {currencyFormatter.format(statementOpeningBalance)}
+                                  </div>
+                                </div>
+                              </div>
+                              {statementRows.map((row) => {
+                                const timeLabel = row.occurred_time
+                                  ? row.occurred_time.slice(0, 5)
+                                  : "";
+                                const valueTone =
+                                  row.delta < 0
+                                    ? "text-rose-600"
+                                    : row.delta > 0
+                                      ? "text-emerald-600"
+                                      : "text-[var(--ink)]";
+                                const valueSign =
+                                  row.delta < 0 ? "-" : row.delta > 0 ? "+" : "";
+                                return (
+                                  <div key={row.id} className="px-4 py-3">
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[96px_64px_minmax(0,1fr)_140px_140px] sm:items-center sm:gap-3">
+                                      <div className="text-xs font-semibold text-[var(--ink)]">
+                                        {formatDate(row.posted_at)}
+                                      </div>
+                                      <div className="text-xs font-semibold text-[var(--muted)]">
+                                        {timeLabel || "--"}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                                          {row.description?.trim() || row.label}
+                                        </p>
+                                        <p className="truncate text-xs text-[var(--muted)]">
+                                          {row.label}
+                                        </p>
+                                      </div>
+                                      <div
+                                        className={`text-right text-sm font-semibold ${valueTone}`}
+                                      >
+                                        {valueSign}
+                                        {currencyFormatter.format(Math.abs(row.delta))}
+                                      </div>
+                                      <div className="text-right text-sm font-semibold text-[var(--ink)]">
+                                        {currencyFormatter.format(row.balance_after)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              <div className="bg-slate-50/60 px-4 py-3">
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[96px_64px_minmax(0,1fr)_140px_140px] sm:items-center sm:gap-3">
+                                  <div className="text-xs font-semibold text-[var(--ink)]">
+                                    {statementEndDate
+                                      ? formatDate(statementEndDate)
+                                      : "--"}
+                                  </div>
+                                  <div className="text-xs font-semibold text-[var(--muted)]">
+                                    --
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                                      Saldo final
+                                    </p>
+                                    <p className="truncate text-xs text-[var(--muted)]">
+                                      Após o último lançamento do período
+                                    </p>
+                                  </div>
+                                  <div className="text-right text-sm font-semibold text-[var(--muted)]">
+                                    —
+                                  </div>
+                                  <div className="text-right text-sm font-semibold text-[var(--ink)]">
+                                    {currencyFormatter.format(statementClosingBalance)}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </section>
                   ) : null}
 
