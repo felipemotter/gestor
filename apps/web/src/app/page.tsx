@@ -778,6 +778,7 @@ export default function HomePage() {
   const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [transactionsLimit, setTransactionsLimit] = useState(8);
+  const [transactionsPageSize, setTransactionsPageSize] = useState(50);
   const [transactionsTotal, setTransactionsTotal] = useState<number | null>(null);
   const [monthlySummary, setMonthlySummary] = useState({
     income: 0,
@@ -928,8 +929,12 @@ export default function HomePage() {
   const [isLoadingStatement, setIsLoadingStatement] = useState(false);
   const [statementError, setStatementError] = useState<string | null>(null);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
-  const [filterAccountId, setFilterAccountId] = useState("");
-  const [filterCategoryId, setFilterCategoryId] = useState("");
+  const [filterAccountIds, setFilterAccountIds] = useState<string[]>([]);
+  const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
+  const [isAccountFilterOpen, setIsAccountFilterOpen] = useState(false);
+  const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+  const accountFilterRef = useRef<HTMLDivElement | null>(null);
+  const categoryFilterRef = useRef<HTMLDivElement | null>(null);
   const [typeFilters, setTypeFilters] = useState<string[]>([
     ...typeFilterAll,
   ]);
@@ -1351,15 +1356,20 @@ export default function HomePage() {
     accountIds: string[],
     limit: number,
     filters: {
-      accountId?: string;
-      categoryId?: string;
+      accountIds?: string[];
+      categoryIds?: string[];
       startDate?: string;
       endDate?: string;
     },
   ) => {
     setIsLoadingTransactions(true);
 
-    if (accountIds.length === 0) {
+    const effectiveAccountIds =
+      filters.accountIds && filters.accountIds.length > 0
+        ? filters.accountIds
+        : accountIds;
+
+    if (effectiveAccountIds.length === 0) {
       setTransactions([]);
       setTransactionsTotal(0);
       setIsLoadingTransactions(false);
@@ -1372,17 +1382,13 @@ export default function HomePage() {
         "id, amount, description, posted_at, created_at, source, external_id, account:accounts(id, name), category:categories(id, name, category_type)",
         { count: "exact" },
       )
-      .in("account_id", accountIds)
+      .in("account_id", effectiveAccountIds)
       .order("posted_at", { ascending: false })
       .order("created_at", { ascending: false })
       .range(0, Math.max(limit - 1, 0));
 
-    if (filters.accountId) {
-      query = query.eq("account_id", filters.accountId);
-    }
-
-    if (filters.categoryId) {
-      query = query.eq("category_id", filters.categoryId);
+    if (filters.categoryIds && filters.categoryIds.length > 0) {
+      query = query.in("category_id", filters.categoryIds);
     }
 
     if (filters.startDate) {
@@ -1629,8 +1635,8 @@ export default function HomePage() {
     const isTransactionsScreen = activeView === "transactions";
 
     loadTransactions(accounts.map((account) => account.id), transactionsLimit, {
-      accountId: filterAccountId || undefined,
-      categoryId: filterCategoryId || undefined,
+      accountIds: filterAccountIds.length > 0 ? filterAccountIds : undefined,
+      categoryIds: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
       startDate:
         (isTransactionsScreen ? filterStartDate : monthRange.startDate) ||
         undefined,
@@ -1656,8 +1662,8 @@ export default function HomePage() {
     activeFamilyId,
     session?.access_token,
     transactionsLimit,
-    filterAccountId,
-    filterCategoryId,
+    filterAccountIds,
+    filterCategoryIds,
     filterStartDate,
     filterEndDate,
     activeMonth,
@@ -1888,22 +1894,29 @@ export default function HomePage() {
   ]);
 
   useEffect(() => {
-    setTransactionsLimit(activeView === "transfers" ? 50 : 8);
+    const nextLimit =
+      activeView === "transfers"
+        ? 50
+        : activeView === "transactions"
+          ? transactionsPageSize
+          : 8;
+    setTransactionsLimit(nextLimit);
   }, [
-    filterAccountId,
-    filterCategoryId,
+    filterAccountIds,
+    filterCategoryIds,
     filterStartDate,
     filterEndDate,
     activeFamilyId,
     activeView,
+    transactionsPageSize,
   ]);
 
   useEffect(() => {
     if (activeView === "transactions") {
       return;
     }
-    setFilterAccountId("");
-    setFilterCategoryId("");
+    setFilterAccountIds([]);
+    setFilterCategoryIds([]);
     setSearchQuery("");
     setTypeFilters([...typeFilterAll]);
   }, [activeView]);
@@ -1924,8 +1937,8 @@ export default function HomePage() {
       setTransactionAccountId("");
       setTransactionDestinationAccountId("");
       setTransactionCategoryId("");
-      setFilterAccountId("");
-      setFilterCategoryId("");
+      setFilterAccountIds([]);
+      setFilterCategoryIds([]);
       setFilterStartDate("");
       setFilterEndDate("");
       setSearchQuery("");
@@ -1935,7 +1948,13 @@ export default function HomePage() {
       setTransferSearch("");
       setTransferMinAmount("");
       setTransferMaxAmount("");
-      setTransactionsLimit(activeView === "transfers" ? 50 : 8);
+      setTransactionsLimit(
+        activeView === "transfers"
+          ? 50
+          : activeView === "transactions"
+            ? transactionsPageSize
+            : 8,
+      );
       return;
     }
 
@@ -1968,17 +1987,27 @@ export default function HomePage() {
       setTransactionCategoryId("");
     }
 
-    if (!accounts.some((account) => account.id === filterAccountId)) {
-      setFilterAccountId("");
-    }
+    setFilterAccountIds((current) => {
+      if (current.length === 0) {
+        return current;
+      }
+      const next = current.filter((accountId) =>
+        accounts.some((account) => account.id === accountId),
+      );
+      return next.length === current.length ? current : next;
+    });
 
-    if (
-      ![...categories, ...archivedCategories].some(
-        (category) => category.id === filterCategoryId,
-      )
-    ) {
-      setFilterCategoryId("");
-    }
+    setFilterCategoryIds((current) => {
+      if (current.length === 0) {
+        return current;
+      }
+      const next = current.filter((categoryId) =>
+        [...categories, ...archivedCategories].some(
+          (category) => category.id === categoryId,
+        ),
+      );
+      return next.length === current.length ? current : next;
+    });
 
     if (!accounts.some((account) => account.id === transferFromAccountId)) {
       setTransferFromAccountId("");
@@ -1995,14 +2024,15 @@ export default function HomePage() {
     transactionAccountId,
     transactionDestinationAccountId,
     transactionCategoryId,
-    filterAccountId,
-    filterCategoryId,
+    filterAccountIds,
+    filterCategoryIds,
     transferFromAccountId,
     transferToAccountId,
     filterStartDate,
     filterEndDate,
     activeMonth,
     activeView,
+    transactionsPageSize,
   ]);
 
   useEffect(() => {
@@ -2099,6 +2129,35 @@ export default function HomePage() {
     };
     void loadCount();
   }, [accountTxnCounts, openAccountMenuId, session?.access_token]);
+
+  useEffect(() => {
+    if (!isAccountFilterOpen && !isCategoryFilterOpen) {
+      return;
+    }
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (
+        (isAccountFilterOpen &&
+          accountFilterRef.current &&
+          target &&
+          accountFilterRef.current.contains(target)) ||
+        (isCategoryFilterOpen &&
+          categoryFilterRef.current &&
+          target &&
+          categoryFilterRef.current.contains(target))
+      ) {
+        return;
+      }
+      setIsAccountFilterOpen(false);
+      setIsCategoryFilterOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isAccountFilterOpen, isCategoryFilterOpen]);
 
   useEffect(() => {
     if (!isBalanceAdjustOpen) {
@@ -2436,7 +2495,7 @@ export default function HomePage() {
 
   const openAccountTransactions = (accountId: string) => {
     setActiveView("transactions");
-    setFilterAccountId(accountId);
+    setFilterAccountIds([accountId]);
     setIsMobileMenuOpen(false);
   };
 
@@ -2922,8 +2981,8 @@ export default function HomePage() {
       ? filterEndDate || monthRange.endDate
       : monthRange.endDate;
     await loadTransactions(accounts.map((item) => item.id), transactionsLimit, {
-      accountId: filterAccountId || undefined,
-      categoryId: filterCategoryId || undefined,
+      accountIds: filterAccountIds.length > 0 ? filterAccountIds : undefined,
+      categoryIds: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
       startDate: rangeStartDate || undefined,
       endDate: rangeEndDate || undefined,
     });
@@ -3656,15 +3715,15 @@ export default function HomePage() {
         filterEndDate !== activeMonthRange.endDate),
   );
   const hasActiveFilters = Boolean(
-    (isTransactionsView && filterAccountId) ||
-      (isTransactionsView && filterCategoryId) ||
+    (isTransactionsView && filterAccountIds.length > 0) ||
+      (isTransactionsView && filterCategoryIds.length > 0) ||
       normalizedSearch ||
       isTypeFilterActive ||
       isCustomDateRange,
   );
   const activeFiltersCount = [
-    filterAccountId ? 1 : 0,
-    filterCategoryId ? 1 : 0,
+    filterAccountIds.length > 0 ? 1 : 0,
+    filterCategoryIds.length > 0 ? 1 : 0,
     normalizedSearch ? 1 : 0,
     isTypeFilterActive ? 1 : 0,
     isCustomDateRange ? 1 : 0,
@@ -4071,32 +4130,66 @@ export default function HomePage() {
       );
     });
   };
+
+  const toggleAccountFilter = (accountId: string) => {
+    setFilterAccountIds((current) => {
+      const isSelected = current.includes(accountId);
+      const next = isSelected
+        ? current.filter((id) => id !== accountId)
+        : [...current, accountId];
+      const allAccountIds = accounts.map((account) => account.id);
+      const normalized = next.filter((id) => allAccountIds.includes(id));
+      return normalized.length === allAccountIds.length ? [] : normalized;
+    });
+  };
+
+  const categoryFilterOptions = buildCategoryOptions(undefined, true, true);
+  const toggleCategoryFilter = (categoryId: string) => {
+    setFilterCategoryIds((current) => {
+      const isSelected = current.includes(categoryId);
+      const next = isSelected
+        ? current.filter((id) => id !== categoryId)
+        : [...current, categoryId];
+      const allCategoryIds = categoryFilterOptions.map((category) => category.id);
+      const normalized = next.filter((id) => allCategoryIds.includes(id));
+      return normalized.length === allCategoryIds.length ? [] : normalized;
+    });
+  };
   const activeFilterChips: Array<{
     key: string;
     label: string;
     className: string;
     title?: string;
   }> = [];
-  if (filterAccountId) {
+  if (filterAccountIds.length > 0) {
+    const selectedAccounts = accounts
+      .filter((account) => filterAccountIds.includes(account.id))
+      .map((account) => account.name);
     const accountLabel =
-      accounts.find((account) => account.id === filterAccountId)?.name ??
-      "Conta";
+      selectedAccounts.length === 1
+        ? selectedAccounts[0]
+        : `${selectedAccounts.length} contas`;
     activeFilterChips.push({
       key: "account",
-      label: `Conta: ${accountLabel}`,
-      title: accountLabel,
+      label: `Contas: ${accountLabel}`,
+      title: selectedAccounts.join(", "),
       className: "bg-slate-100 text-slate-600",
     });
   }
-  if (filterCategoryId) {
-    const categoryLabel = getCategoryDisplayLabel(
-      filterCategoryId,
-      categoriesById[filterCategoryId]?.name,
-    );
+  if (filterCategoryIds.length > 0) {
+    const selectedCategories = filterCategoryIds
+      .map((categoryId) =>
+        getCategoryDisplayLabel(categoryId, categoriesById[categoryId]?.name),
+      )
+      .filter(Boolean);
+    const categoryLabel =
+      selectedCategories.length === 1
+        ? selectedCategories[0]
+        : `${selectedCategories.length} categorias`;
     activeFilterChips.push({
       key: "category",
-      label: `Categoria: ${categoryLabel}`,
-      title: categoryLabel,
+      label: `Categorias: ${categoryLabel}`,
+      title: selectedCategories.join(", "),
       className: "bg-slate-100 text-slate-600",
     });
   }
@@ -6860,8 +6953,8 @@ export default function HomePage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setFilterAccountId("");
-                              setFilterCategoryId("");
+                              setFilterAccountIds([]);
+                              setFilterCategoryIds([]);
                               setSearchQuery("");
                               setTypeFilters([...typeFilterAll]);
                               resetFilterDateRange();
@@ -6923,8 +7016,8 @@ export default function HomePage() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      setFilterAccountId("");
-                                      setFilterCategoryId("");
+                                      setFilterAccountIds([]);
+                                      setFilterCategoryIds([]);
                                       setSearchQuery("");
                                       setTypeFilters([...typeFilterAll]);
                                       resetFilterDateRange();
@@ -6960,45 +7053,77 @@ export default function HomePage() {
                                   <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
                                     Conta
                                   </label>
-                                  <select
-                                    value={filterAccountId}
-                                    onChange={(event) =>
-                                      setFilterAccountId(event.target.value)
-                                    }
-                                    className="h-10 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                                  >
-                                    <option value="">Todas as contas</option>
-                                    {accounts.map((account) => (
-                                      <option key={account.id} value={account.id}>
-                                        {account.name}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  <div className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2 shadow-sm">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 py-1 text-xs font-semibold text-[var(--ink)]">
+                                      <span>Todas as contas</span>
+                                      <input
+                                        type="checkbox"
+                                        checked={filterAccountIds.length === 0}
+                                        onChange={() => setFilterAccountIds([])}
+                                        className="h-4 w-4 accent-[var(--accent)]"
+                                      />
+                                    </label>
+                                    <div className="mt-2 max-h-40 space-y-1 overflow-auto border-t border-[var(--border)] pt-2">
+                                      {accounts.map((account) => (
+                                        <label
+                                          key={account.id}
+                                          className="flex cursor-pointer items-center justify-between gap-3 py-1 text-xs font-semibold text-[var(--ink)]"
+                                        >
+                                          <span className="truncate">
+                                            {account.name}
+                                          </span>
+                                          <input
+                                            type="checkbox"
+                                            checked={filterAccountIds.includes(
+                                              account.id,
+                                            )}
+                                            onChange={() =>
+                                              toggleAccountFilter(account.id)
+                                            }
+                                            className="h-4 w-4 accent-[var(--accent)]"
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
                                 </div>
                                 <div className="grid gap-2">
                                   <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
                                     Categoria
                                   </label>
-                                  <select
-                                    value={filterCategoryId}
-                                    onChange={(event) =>
-                                      setFilterCategoryId(event.target.value)
-                                    }
-                                    className="h-10 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                                  >
-                                    <option value="">Todas as categorias</option>
-                                    {buildCategoryOptions(
-                                      undefined,
-                                      true,
-                                      true,
-                                    ).map(
-                                      (category) => (
-                                        <option key={category.id} value={category.id}>
-                                          {category.label}
-                                        </option>
-                                      ),
-                                    )}
-                                  </select>
+                                  <div className="rounded-2xl border border-[var(--border)] bg-white px-3 py-2 shadow-sm">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 py-1 text-xs font-semibold text-[var(--ink)]">
+                                      <span>Todas as categorias</span>
+                                      <input
+                                        type="checkbox"
+                                        checked={filterCategoryIds.length === 0}
+                                        onChange={() => setFilterCategoryIds([])}
+                                        className="h-4 w-4 accent-[var(--accent)]"
+                                      />
+                                    </label>
+                                    <div className="mt-2 max-h-48 space-y-1 overflow-auto border-t border-[var(--border)] pt-2">
+                                      {categoryFilterOptions.map((category) => (
+                                        <label
+                                          key={category.id}
+                                          className="flex cursor-pointer items-center justify-between gap-3 py-1 text-xs font-semibold text-[var(--ink)]"
+                                        >
+                                          <span className="truncate">
+                                            {category.label}
+                                          </span>
+                                          <input
+                                            type="checkbox"
+                                            checked={filterCategoryIds.includes(
+                                              category.id,
+                                            )}
+                                            onChange={() =>
+                                              toggleCategoryFilter(category.id)
+                                            }
+                                            className="h-4 w-4 accent-[var(--accent)]"
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
                                 </div>
                                 <div className="grid gap-2">
                                   <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
@@ -7059,6 +7184,24 @@ export default function HomePage() {
                                 </div>
                                 <div className="grid gap-2">
                                   <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                                    Por página
+                                  </label>
+                                  <select
+                                    value={transactionsPageSize}
+                                    onChange={(event) =>
+                                      setTransactionsPageSize(
+                                        Number(event.target.value) || 50,
+                                      )
+                                    }
+                                    className="h-10 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                                  >
+                                    <option value={25}>25 lançamentos</option>
+                                    <option value={50}>50 lançamentos</option>
+                                    <option value={100}>100 lançamentos</option>
+                                  </select>
+                                </div>
+                                <div className="grid gap-2">
+                                  <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
                                     Tipo
                                   </label>
                                   <div className="flex flex-wrap items-center gap-1 rounded-full border border-[var(--border)] bg-white px-1 py-1 shadow-sm">
@@ -7098,40 +7241,124 @@ export default function HomePage() {
                             </div>
                           </div>
                           <div className="mt-4 hidden flex-wrap items-center gap-3 sm:flex">
-                            <select
-                              value={filterAccountId}
-                              onChange={(event) =>
-                                setFilterAccountId(event.target.value)
-                              }
-                              className="min-w-[180px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                            >
-                              <option value="">Todas as contas</option>
-                              {accounts.map((account) => (
-                                <option key={account.id} value={account.id}>
-                                  {account.name}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              value={filterCategoryId}
-                              onChange={(event) =>
-                                setFilterCategoryId(event.target.value)
-                              }
-                              className="min-w-[180px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
-                            >
-                              <option value="">Todas as categorias</option>
-                              {buildCategoryOptions(
-                                undefined,
-                                true,
-                                true,
-                              ).map(
-                                (category) => (
-                                  <option key={category.id} value={category.id}>
-                                    {category.label}
-                                  </option>
-                                ),
-                              )}
-                            </select>
+                            <div ref={accountFilterRef} className="relative">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsAccountFilterOpen((prev) => !prev);
+                                  setIsCategoryFilterOpen(false);
+                                }}
+                                className="min-w-[200px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-left text-sm font-semibold text-[var(--ink)] shadow-sm outline-none transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)]"
+                              >
+                                {filterAccountIds.length === 0
+                                  ? "Todas as contas"
+                                  : filterAccountIds.length === 1
+                                    ? accounts.find(
+                                        (account) =>
+                                          account.id === filterAccountIds[0],
+                                      )?.name ?? "Conta"
+                                    : `${filterAccountIds.length} contas`}
+                              </button>
+                              {isAccountFilterOpen ? (
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-[320px] overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-lg">
+                                  <div className="border-b border-[var(--border)] px-3 py-2">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 text-xs font-semibold text-[var(--ink)]">
+                                      <span>Todas as contas</span>
+                                      <input
+                                        type="checkbox"
+                                        checked={filterAccountIds.length === 0}
+                                        onChange={() => setFilterAccountIds([])}
+                                        className="h-4 w-4 accent-[var(--accent)]"
+                                      />
+                                    </label>
+                                  </div>
+                                  <div className="max-h-64 overflow-auto px-3 py-2">
+                                    <div className="space-y-1">
+                                      {accounts.map((account) => (
+                                        <label
+                                          key={account.id}
+                                          className="flex cursor-pointer items-center justify-between gap-3 rounded-xl px-2 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-slate-50"
+                                        >
+                                          <span className="truncate">
+                                            {account.name}
+                                          </span>
+                                          <input
+                                            type="checkbox"
+                                            checked={filterAccountIds.includes(
+                                              account.id,
+                                            )}
+                                            onChange={() =>
+                                              toggleAccountFilter(account.id)
+                                            }
+                                            className="h-4 w-4 accent-[var(--accent)]"
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <div ref={categoryFilterRef} className="relative">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsCategoryFilterOpen((prev) => !prev);
+                                  setIsAccountFilterOpen(false);
+                                }}
+                                className="min-w-[220px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-left text-sm font-semibold text-[var(--ink)] shadow-sm outline-none transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)]"
+                              >
+                                {filterCategoryIds.length === 0
+                                  ? "Todas as categorias"
+                                  : filterCategoryIds.length === 1
+                                    ? getCategoryDisplayLabel(
+                                        filterCategoryIds[0],
+                                        categoriesById[filterCategoryIds[0]]
+                                          ?.name,
+                                      )
+                                    : `${filterCategoryIds.length} categorias`}
+                              </button>
+                              {isCategoryFilterOpen ? (
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-[360px] overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-lg">
+                                  <div className="border-b border-[var(--border)] px-3 py-2">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 text-xs font-semibold text-[var(--ink)]">
+                                      <span>Todas as categorias</span>
+                                      <input
+                                        type="checkbox"
+                                        checked={filterCategoryIds.length === 0}
+                                        onChange={() => setFilterCategoryIds([])}
+                                        className="h-4 w-4 accent-[var(--accent)]"
+                                      />
+                                    </label>
+                                  </div>
+                                  <div className="max-h-64 overflow-auto px-3 py-2">
+                                    <div className="space-y-1">
+                                      {categoryFilterOptions.map((category) => (
+                                        <label
+                                          key={category.id}
+                                          className="flex cursor-pointer items-center justify-between gap-3 rounded-xl px-2 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-slate-50"
+                                        >
+                                          <span className="truncate">
+                                            {category.label}
+                                          </span>
+                                          <input
+                                            type="checkbox"
+                                            checked={filterCategoryIds.includes(
+                                              category.id,
+                                            )}
+                                            onChange={() =>
+                                              toggleCategoryFilter(category.id)
+                                            }
+                                            className="h-4 w-4 accent-[var(--accent)]"
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
                             <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-3 py-2 shadow-sm">
                               <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
                                 Período
@@ -7188,6 +7415,19 @@ export default function HomePage() {
                                 </svg>
                               </button>
                             </div>
+                            <select
+                              value={transactionsPageSize}
+                              onChange={(event) =>
+                                setTransactionsPageSize(
+                                  Number(event.target.value) || 50,
+                                )
+                              }
+                              className="min-w-[170px] rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                            >
+                              <option value={25}>25 / página</option>
+                              <option value={50}>50 / página</option>
+                              <option value={100}>100 / página</option>
+                            </select>
                             <div className="flex flex-wrap items-center gap-1 rounded-full border border-[var(--border)] bg-white px-1 py-1 shadow-sm">
                               {typeFilterOptions.map((option) => {
                                 const isActive = typeFilters.includes(option.value);
@@ -7525,14 +7765,20 @@ export default function HomePage() {
                               Exibindo {transactions.length} de {transactionsTotal}
                             </span>
                           )}
-                          {isTransactionsView ? (
+                              {isTransactionsView ? (
                             showPagination ? (
                               transactions.length < transactionsTotal ? (
                                 <button
                                   type="button"
                                   disabled={isLoadingTransactions}
                                   onClick={() =>
-                                    setTransactionsLimit((prev) => prev + 8)
+                                    setTransactionsLimit(
+                                      (prev) =>
+                                        prev +
+                                        (activeView === "transactions"
+                                          ? transactionsPageSize
+                                          : 8),
+                                    )
                                   }
                                   className="rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
