@@ -93,9 +93,9 @@ export function CategoryModal({
 
   // Reset form when modal opens
   const prevIsOpen = useRef(false);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: reset form when modal opens
   useLayoutEffect(() => {
     if (isOpen && !prevIsOpen.current) {
+      /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset form when modal opens */
       setCategoryError(null);
 
       if (editingCategory) {
@@ -116,6 +116,7 @@ export function CategoryModal({
         setCategoryIconBg(DEFAULT_CATEGORY_ICON_BG);
         setCategoryIconColor(DEFAULT_CATEGORY_ICON_COLOR);
       }
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, editingCategory, defaultType, defaultParentId, categories]);

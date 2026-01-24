@@ -67,6 +67,7 @@ export default function DashboardPage() {
   // Load transactions for dashboard
   useEffect(() => {
     if (!activeFamilyId || !session?.access_token || accounts.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: reset on missing data
       setTransactions([]);
       return;
     }
@@ -118,6 +119,7 @@ export default function DashboardPage() {
   // Load monthly summary
   useEffect(() => {
     if (!activeFamilyId || !session?.access_token || accounts.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: reset on missing data
       setMonthlySummary({ income: 0, expense: 0, count: 0 });
       return;
     }
@@ -169,9 +171,11 @@ export default function DashboardPage() {
   // Load dashboard analytics
   useEffect(() => {
     if (!activeFamilyId || !session?.access_token || accounts.length === 0) {
+      /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset on missing data */
       setDashboardExpenseData([]);
       setDashboardIncomeData([]);
       setDashboardCashflowPoints([]);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
 

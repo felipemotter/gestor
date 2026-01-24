@@ -2,8 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { useApp } from "@/contexts/AppContext";
-import { getBrazilToday, getDateParts, parseBrazilDate } from "@/lib/date-utils";
-import { BRAZIL_TZ } from "@/lib/formatters";
+import { getBrazilToday, getDateParts } from "@/lib/date-utils";
 
 const monthNames = [
   "JAN",

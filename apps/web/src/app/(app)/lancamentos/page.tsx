@@ -141,8 +141,10 @@ export default function LancamentosPage() {
   // Load transactions
   useEffect(() => {
     if (!session?.access_token || !activeFamilyId || accounts.length === 0) {
+      /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset state */
       setTransactions([]);
       setTransactionsTotal(null);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
 
@@ -219,6 +221,7 @@ export default function LancamentosPage() {
 
   // Reset limit when filters change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: sync limit with filters
     setLimit(pageSize);
   }, [pageSize, filterAccountIds, filterCategoryIds, filterStartDate, filterEndDate, activeMonth]);
 

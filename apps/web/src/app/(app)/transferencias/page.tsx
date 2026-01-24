@@ -64,6 +64,7 @@ export default function TransferenciasPage() {
   // Load transactions for the month
   useEffect(() => {
     if (!session?.access_token || !activeFamilyId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: reset on missing data
       setTransactions([]);
       return;
     }
@@ -110,12 +111,14 @@ export default function TransferenciasPage() {
 
   // Reset filters when accounts change
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- Intentional: sync with accounts */
     if (!accounts.some((a) => a.id === fromAccountId)) {
       setFromAccountId("");
     }
     if (!accounts.some((a) => a.id === toAccountId)) {
       setToAccountId("");
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [accounts, fromAccountId, toAccountId]);
 
   // Build transfer items from transaction pairs

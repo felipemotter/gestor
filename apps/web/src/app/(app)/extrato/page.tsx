@@ -6,7 +6,7 @@ import { Header } from "@/components/layout/Header";
 import { useApp } from "@/contexts/AppContext";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { currencyFormatter, shortDateFormatter } from "@/lib/formatters";
-import { subtractDaysFromBrazilDate, getDateParts, formatDateKey, parseBrazilDate, parseDateValue, calendarWeekdays } from "@/lib/date-utils";
+import { subtractDaysFromBrazilDate, getDateParts, formatDateKey, parseDateValue, calendarWeekdays } from "@/lib/date-utils";
 import type { StatementRow } from "@/types";
 
 const supabase = getSupabaseClient();
@@ -111,9 +111,11 @@ export default function ExtratoPage() {
   useEffect(() => {
     if (!activeFamilyId || !session?.access_token) return;
     if (!statementAccountId) {
+      /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset state on missing data */
       setStatementRows([]);
       setStatementOpeningBalance(0);
       setStatementClosingBalance(0);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
 

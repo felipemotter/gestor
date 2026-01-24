@@ -111,7 +111,7 @@ export function TransactionModal() {
   useLayoutEffect(() => {
     if (transactionModal.isOpen && !prevIsOpen.current) {
       const today = getBrazilToday();
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: reset form when modal opens
+      /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset form when modal opens */
       setTransactionType(transactionModal.initialType ?? "expense");
       setTransactionAccountId("");
       setTransactionDestinationAccountId("");
@@ -129,6 +129,7 @@ export function TransactionModal() {
       }
       setTransactionError(null);
       setIsCalendarOpen(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
     prevIsOpen.current = transactionModal.isOpen;
   }, [transactionModal.isOpen, transactionModal.initialType]);

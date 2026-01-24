@@ -214,6 +214,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!session?.user.id || !session.access_token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: reset on logout
       setMemberships([]);
       return;
     }
@@ -223,6 +224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Set active family when memberships load
   useEffect(() => {
     if (memberships.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: reset on empty
       setActiveFamilyId(null);
       return;
     }
@@ -594,10 +596,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Load data when family changes
   useEffect(() => {
     if (!activeFamilyId || !session?.access_token) {
+      /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset on missing data */
       setAccounts([]);
       setCategories([]);
       setArchivedCategories([]);
       setArchivedAccounts([]);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
 
@@ -625,6 +629,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return acc;
     }, {});
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: load balances
     loadAccountBalances(
       accounts.map((account) => account.id),
       { endDate: monthRange.endDate || undefined },
