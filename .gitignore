@@ -43,3 +43,6 @@ coverage/
 
 # Local caches
 .npm-cache/
+
+# Example data
+*.ofx
