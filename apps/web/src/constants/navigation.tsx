@@ -91,6 +91,47 @@ export const navItems: NavItem[] = [
     ),
   },
   {
+    label: "Transferências",
+    view: "transfers",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M7 10l5-5 5 5" />
+        <path d="M7 14l5 5 5-5" />
+      </svg>
+    ),
+  },
+  {
+    label: "Extrato",
+    view: "statement",
+    icon: ({ className = "h-5 w-5" }) => (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+        <path d="M14 2v6h6" />
+        <path d="M16 13H8" />
+        <path d="M16 17H8" />
+        <path d="M10 9H8" />
+      </svg>
+    ),
+  },
+  {
     label: "Importações",
     icon: ({ className = "h-5 w-5" }) => (
       <svg
