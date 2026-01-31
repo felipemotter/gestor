@@ -44,5 +44,9 @@ coverage/
 # Local caches
 .npm-cache/
 
+# Claude Code (local)
+.claude/settings.local.json
+.claude/skills/ver-foto/
+
 # Example data
 *.ofx
