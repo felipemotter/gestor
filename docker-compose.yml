@@ -13,6 +13,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXP: ${JWT_EXPIRY}
+      SEED_DEMO: "true"
     ports:
       - "5433:5432"
     volumes:
@@ -25,6 +26,8 @@ services:
       - ./supabase/db/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:ro
       - ./supabase/db/pooler.sql:/docker-entrypoint-initdb.d/migrations/99-pooler.sql:ro
       - ./db/init/001_init.sql:/docker-entrypoint-initdb.d/migrations/99-gestor.sql:ro
+      - ./db/seed/demo_data.sql:/docker-entrypoint-initdb.d/seed/demo_data.sql:ro
+      - ./db/seed/maybe_seed.sh:/docker-entrypoint-initdb.d/migrations/99-zzz-seed.sh:ro
 
   auth:
     image: supabase/gotrue:v2.184.0
@@ -84,6 +87,8 @@ services:
       API_JWT_SECRET: ${JWT_SECRET}
       DB_ENC_KEY: ${DB_ENC_KEY}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      APP_NAME: realtime
+      RLIMIT_NOFILE: "65536"
       PORT: 4000
     ports:
       - "4000:4000"
@@ -235,6 +240,7 @@ services:
     environment:
       NEXT_PUBLIC_SUPABASE_URL: http://localhost:8000
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
       WATCHPACK_POLLING: "true"
     command: sh -c "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"
     volumes:
