@@ -35,7 +35,8 @@ export type ActiveView =
   | "transfers"
   | "accounts"
   | "categories"
-  | "statement";
+  | "statement"
+  | "imports";
 
 export type TransactionType = "expense" | "income" | "transfer";
 

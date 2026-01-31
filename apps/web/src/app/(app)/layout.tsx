@@ -15,6 +15,7 @@ const pathToView: Record<string, ActiveView> = {
   "/contas": "accounts",
   "/categorias": "categories",
   "/extrato": "statement",
+  "/importacoes": "imports",
 };
 
 const viewToPath: Record<ActiveView, string> = {
@@ -24,6 +25,7 @@ const viewToPath: Record<ActiveView, string> = {
   accounts: "/contas",
   categories: "/categorias",
   statement: "/extrato",
+  imports: "/importacoes",
 };
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {

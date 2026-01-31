@@ -133,6 +133,7 @@ export const navItems: NavItem[] = [
   },
   {
     label: "Importações",
+    view: "imports",
     icon: ({ className = "h-5 w-5" }) => (
       <svg
         aria-hidden="true"
