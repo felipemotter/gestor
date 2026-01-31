@@ -23,6 +23,7 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 ├── apps/web/                    # Frontend Next.js
 │   └── src/
 │       ├── app/
+│       │   ├── manifest.ts      # PWA manifest (MetadataRoute.Manifest)
 │       │   ├── (auth)/          # Login, registro
 │       │   │   └── layout.tsx
 │       │   └── (app)/           # Rotas protegidas
@@ -52,6 +53,9 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 │       └── types/
 │           ├── index.ts             # Tipos compartilhados
 │           └── ofx-js.d.ts          # Type declarations para ofx-js
+│   └── public/
+│       ├── sw.js                    # Service Worker (cache mínimo, network-first)
+│       └── icons/                   # Ícones PWA (192, 512, apple-touch-icon)
 ├── services/ofx/               # Microserviço FastAPI para parsing OFX
 │   └── app/main.py
 ├── db/
@@ -171,6 +175,17 @@ python3 scripts/gen_env.py
 
 Itens implementados: Dashboard, Lançamentos, Contas, Categorias, Transferências, Extrato, Importações.
 Itens no menu (ainda não implementados): Orçamento, Relatórios, Metas, Regras e Automação.
+
+## PWA (Progressive Web App)
+
+O app é instalável como PWA em Android/iOS. Implementação sem libs externas:
+
+- `app/manifest.ts` — Web App Manifest nativo do Next.js (`MetadataRoute.Manifest`)
+- `public/sw.js` — Service Worker mínimo (network-first, cache do app shell como fallback)
+- `layout.tsx` — Meta tags (`appleWebApp`, `viewport`, `themeColor`) e registro do SW via `<Script>`
+- `public/icons/` — Ícones 192x192, 512x512 e apple-touch-icon (180x180), gerados a partir de `logo_gestor_quadrado.png`
+
+Não usar `next-pwa` ou cache offline agressivo — dados dependem do Supabase em tempo real.
 
 ## Regras de negócio importantes
 
