@@ -388,10 +388,10 @@ export default function DashboardPage() {
   return (
     <>
       <Header />
-      <main className="flex flex-col gap-4 sm:gap-6">
+      <main className="flex min-w-0 flex-col gap-4 sm:gap-6">
         {/* Summary cards */}
-        <section className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 px-3 py-4 text-white shadow-sm sm:p-4">
+        <section className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4 overflow-hidden">
+          <div className="min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 px-3 py-4 text-white shadow-sm sm:p-4">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-100">Saldo nas contas</p>
               <span className={`inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold ${balanceIndicator.text}`}>
@@ -402,17 +402,17 @@ export default function DashboardPage() {
             <p className={`mt-2 text-2xl font-semibold ${balanceValueTone}`}>{balanceDisplay}</p>
             <p className="mt-1 text-xs text-sky-100">Até {monthLabel}</p>
           </div>
-          <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-3 py-4 text-white shadow-sm sm:p-4">
+          <div className="min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-3 py-4 text-white shadow-sm sm:p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-100">Receitas</p>
             <p className="mt-2 text-2xl font-semibold">{currencyFormatter.format(monthlySummary.income)}</p>
             <p className="mt-1 text-xs text-emerald-100">Período: {monthLabel}</p>
           </div>
-          <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 px-3 py-4 text-white shadow-sm sm:p-4">
+          <div className="min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 px-3 py-4 text-white shadow-sm sm:p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-100">Despesas</p>
             <p className="mt-2 text-2xl font-semibold">{currencyFormatter.format(monthlySummary.expense)}</p>
             <p className="mt-1 text-xs text-rose-100">Período: {monthLabel}</p>
           </div>
-          <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 px-3 py-4 text-white shadow-sm sm:p-4">
+          <div className="min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 px-3 py-4 text-white shadow-sm sm:p-4">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-100">Resultado do mês</p>
               <span className={`inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold ${resultIndicator.text}`}>
@@ -426,9 +426,9 @@ export default function DashboardPage() {
         </section>
 
         {/* Accounts and transactions */}
-        <section className="grid gap-4 sm:gap-6 xl:grid-cols-2">
+        <section className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-2">
           {/* Top accounts by balance */}
-          <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
+          <div className="min-w-0 overflow-hidden rounded-3xl border border-[var(--border)] bg-white/80 px-2 py-4 shadow-sm sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="pl-1 sm:pl-0">
                 <h3 className="text-base font-semibold uppercase tracking-[0.2em] text-[var(--ink)] sm:text-lg sm:tracking-[0.24em]">
@@ -478,7 +478,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Latest transactions */}
-          <div className="rounded-3xl border border-[var(--border)] bg-white/80 px-1.5 py-4 shadow-sm sm:p-6">
+          <div className="min-w-0 overflow-hidden rounded-3xl border border-[var(--border)] bg-white/80 px-2 py-4 shadow-sm sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="pl-1 sm:pl-0">
                 <h3 className="text-base font-semibold uppercase tracking-[0.2em] text-[var(--ink)] sm:text-lg sm:tracking-[0.24em]">
@@ -537,7 +537,7 @@ export default function DashboardPage() {
         </section>
 
         {/* Charts */}
-        <section className="grid items-stretch gap-4 sm:gap-6 xl:grid-cols-3">
+        <section className="grid min-w-0 items-stretch gap-4 sm:gap-6 xl:grid-cols-3">
           <div className={isLoadingDashboardAnalytics ? "opacity-60" : ""}>
             <DonutChart title="Despesas por categoria" segments={dashboardExpenseData} />
           </div>

@@ -19,8 +19,13 @@
   --font-sans: var(--font-body);
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   min-height: 100vh;
+  overflow-x: hidden;
   background: radial-gradient(
       120% 120% at 10% 0%,
       rgba(37, 99, 235, 0.12),
