@@ -123,8 +123,7 @@ Todas as tabelas têm RLS ativada. Permissões baseadas em role via `is_family_*
 
 ### Commits
 
-- Conventional commits em português/inglês: `feat`, `fix`, `refactor`, `chore`, `docs`
-- Escopo entre parênteses: `fix(ui):`, `refactor(web):`, `feat(db):`
+Ver `.claude/skills/commit/SKILL.md` para o padrão completo. Usar sempre a skill `/commit`.
 
 ## Comandos de desenvolvimento
 
