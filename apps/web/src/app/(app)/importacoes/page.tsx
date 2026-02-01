@@ -1,10 +1,15 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Header } from "@/components/layout/Header";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, type Category } from "@/contexts/AppContext";
 import type { ParsedOFX, ParsedTransaction } from "@/lib/ofx-parser";
+import { applyRulesToBatch, type RuleMatchResult } from "@/lib/rule-matcher";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import { primaryButton, secondaryButton } from "@/constants/styles";
+import type { Rule } from "@/types";
+
+const supabase = getSupabaseClient();
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -25,7 +30,7 @@ function formatDate(dateStr: string) {
 type ImportStep = "upload" | "preview" | "importing" | "done";
 
 export default function ImportacoesPage() {
-  const { session, activeFamilyId, accounts, triggerRefresh } = useApp();
+  const { session, activeFamilyId, accounts, categories, triggerRefresh } = useApp();
 
   // Step state
   const [step, setStep] = useState<ImportStep>("upload");
@@ -39,11 +44,79 @@ export default function ImportacoesPage() {
   const [parsedData, setParsedData] = useState<ParsedOFX | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState("");
 
+  // Rules and auto-categorization
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [ruleMatches, setRuleMatches] = useState<Map<number, RuleMatchResult>>(new Map());
+  const [categoryOverrides, setCategoryOverrides] = useState<Map<number, string | null>>(new Map());
+
   // Import result
   const [importResult, setImportResult] = useState<{
     imported: number;
     duplicates: number;
+    autoCategorized: number;
   } | null>(null);
+
+  // Category lookup
+  const categoriesById = categories.reduce<Record<string, Category>>((acc, cat) => {
+    acc[cat.id] = cat;
+    return acc;
+  }, {});
+
+  const getCategoryLabel = (id: string) => {
+    const cat = categoriesById[id];
+    if (!cat) return "?";
+    if (cat.parent_id) {
+      const parent = categoriesById[cat.parent_id];
+      return parent ? `${parent.name} / ${cat.name}` : cat.name;
+    }
+    return cat.name;
+  };
+
+  // Load rules on mount
+  useEffect(() => {
+    if (!activeFamilyId || !session?.access_token) return;
+    supabase
+      .from("rules")
+      .select("*")
+      .eq("family_id", activeFamilyId)
+      .eq("is_active", true)
+      .order("priority", { ascending: true })
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        setRules(data ?? []);
+      });
+  }, [activeFamilyId, session?.access_token]);
+
+  // Auto-match account by OFX bank/account IDs
+  useEffect(() => {
+    if (!parsedData) return;
+    const autoAccount = accounts.find(
+      (a) =>
+        a.is_reconcilable &&
+        a.ofx_bank_id != null &&
+        a.ofx_account_id != null &&
+        a.ofx_bank_id === parsedData.bankId &&
+        a.ofx_account_id === parsedData.accountId,
+    );
+    if (autoAccount) {
+      setSelectedAccountId(autoAccount.id);
+    }
+  }, [parsedData, accounts]);
+
+  // Apply rules when parsedData or rules change
+  useEffect(() => {
+    if (!parsedData || rules.length === 0) {
+      setRuleMatches(new Map());
+      return;
+    }
+    const txs = parsedData.transactions.map((tx) => ({
+      memo: tx.memo,
+      amount: tx.amount,
+      postedAt: tx.postedAt,
+    }));
+    const matches = applyRulesToBatch(rules, txs);
+    setRuleMatches(matches);
+  }, [parsedData, rules]);
 
   // Generate hash for the entire file (for idempotency)
   const generateFileHash = (transactions: ParsedTransaction[]) => {
@@ -85,6 +158,7 @@ export default function ImportacoesPage() {
       }
 
       setParsedData(result.data);
+      setCategoryOverrides(new Map());
       setStep("preview");
     } catch (err) {
       setError("Erro ao enviar arquivo");
@@ -126,6 +200,33 @@ export default function ImportacoesPage() {
     [handleFile]
   );
 
+  // Get effective category for a transaction
+  const getEffectiveCategory = (index: number): { id: string | null; isAuto: boolean } => {
+    if (categoryOverrides.has(index)) {
+      return { id: categoryOverrides.get(index) ?? null, isAuto: false };
+    }
+    const match = ruleMatches.get(index);
+    if (match) {
+      return { id: match.categoryId, isAuto: true };
+    }
+    return { id: null, isAuto: false };
+  };
+
+  // Handle category override
+  const handleCategoryOverride = (index: number, categoryId: string) => {
+    setCategoryOverrides((prev) => {
+      const next = new Map(prev);
+      if (categoryId === "") {
+        next.delete(index);
+      } else if (categoryId === "__none__") {
+        next.set(index, null);
+      } else {
+        next.set(index, categoryId);
+      }
+      return next;
+    });
+  };
+
   // Confirm import
   const handleConfirmImport = async () => {
     if (!parsedData || !selectedAccountId || !activeFamilyId || !session?.access_token) {
@@ -137,6 +238,19 @@ export default function ImportacoesPage() {
     setError(null);
 
     try {
+      // Build per-transaction data
+      const transactionsWithCategories = parsedData.transactions.map((tx, index) => {
+        const effective = getEffectiveCategory(index);
+        const match = ruleMatches.get(index);
+        const overrideDesc = effective.isAuto && match?.setDescription ? match.setDescription : undefined;
+
+        return {
+          ...tx,
+          category_id: effective.id,
+          override_description: overrideDesc,
+        };
+      });
+
       const response = await fetch("/api/imports/confirm", {
         method: "POST",
         headers: {
@@ -146,9 +260,12 @@ export default function ImportacoesPage() {
         body: JSON.stringify({
           accountId: selectedAccountId,
           familyId: activeFamilyId,
-          transactions: parsedData.transactions,
+          transactions: transactionsWithCategories,
           source: `ofx:${parsedData.bankName || "unknown"}`,
           rawHash: generateFileHash(parsedData.transactions),
+          startDate: parsedData.startDate || null,
+          endDate: parsedData.endDate || null,
+          ledgerBalance: parsedData.ledgerBalance,
         }),
       });
 
@@ -163,6 +280,7 @@ export default function ImportacoesPage() {
       setImportResult({
         imported: result.imported,
         duplicates: result.duplicates,
+        autoCategorized: result.autoCategorized ?? 0,
       });
       setStep("done");
       triggerRefresh();
@@ -179,6 +297,8 @@ export default function ImportacoesPage() {
     setSelectedAccountId("");
     setError(null);
     setImportResult(null);
+    setCategoryOverrides(new Map());
+    setRuleMatches(new Map());
   };
 
   // Calculate totals
@@ -195,6 +315,52 @@ export default function ImportacoesPage() {
     },
     { debits: 0, credits: 0, debitCount: 0, creditCount: 0 }
   ) ?? { debits: 0, credits: 0, debitCount: 0, creditCount: 0 };
+
+  // Auto-categorized count
+  const autoCategorizedCount = parsedData
+    ? parsedData.transactions.filter((_, i) => {
+        const eff = getEffectiveCategory(i);
+        return eff.id != null;
+      }).length
+    : 0;
+
+  // Category select options
+  const expenseCategories = categories.filter((c) => c.category_type === "expense");
+  const incomeCategories = categories.filter((c) => c.category_type === "income");
+
+  const renderCategoryOptions = (cats: Category[], label: string) => {
+    const roots = cats.filter((c) => !c.parent_id);
+    const children = cats.filter((c) => c.parent_id);
+    const childrenByParent = children.reduce<Record<string, Category[]>>((acc, c) => {
+      if (!c.parent_id) return acc;
+      if (!acc[c.parent_id]) acc[c.parent_id] = [];
+      acc[c.parent_id].push(c);
+      return acc;
+    }, {});
+
+    const options: { id: string; label: string }[] = [];
+    for (const root of roots.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))) {
+      options.push({ id: root.id, label: root.name });
+      const subs = (childrenByParent[root.id] ?? []).sort((a, b) =>
+        a.name.localeCompare(b.name, "pt-BR"),
+      );
+      for (const sub of subs) {
+        options.push({ id: sub.id, label: getCategoryLabel(sub.id) });
+      }
+    }
+
+    if (options.length === 0) return null;
+
+    return (
+      <optgroup label={label}>
+        {options.map((opt) => (
+          <option key={opt.id} value={opt.id}>
+            {opt.label}
+          </option>
+        ))}
+      </optgroup>
+    );
+  };
 
   return (
     <>
@@ -345,6 +511,15 @@ export default function ImportacoesPage() {
                   </div>
                 </div>
 
+                {/* Auto-categorization summary */}
+                {autoCategorizedCount > 0 && (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-sm font-semibold text-blue-700">
+                      {autoCategorizedCount} de {parsedData.transactions.length} transações categorizadas automaticamente
+                    </p>
+                  </div>
+                )}
+
                 {/* Account selector */}
                 <div className="rounded-2xl border border-[var(--border)] bg-white p-4">
                   <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
@@ -356,12 +531,17 @@ export default function ImportacoesPage() {
                     className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                   >
                     <option value="">Selecione uma conta...</option>
-                    {accounts.map((account) => (
+                    {accounts.filter((a) => a.is_reconcilable).map((account) => (
                       <option key={account.id} value={account.id}>
                         {account.name}
                       </option>
                     ))}
                   </select>
+                  {accounts.length > 0 && accounts.filter((a) => a.is_reconcilable).length === 0 && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      Nenhuma conta reconciliável. Habilite a opção &quot;Conta reconciliável&quot; no cadastro da conta para permitir importações.
+                    </p>
+                  )}
                 </div>
 
                 {/* Transaction list */}
@@ -381,33 +561,73 @@ export default function ImportacoesPage() {
                           <th className="px-4 py-2 text-left font-semibold">
                             Descrição
                           </th>
+                          <th className="hidden px-4 py-2 text-left font-semibold sm:table-cell">
+                            Categoria
+                          </th>
                           <th className="px-4 py-2 text-right font-semibold">
                             Valor
                           </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {parsedData.transactions.map((tx, index) => (
-                          <tr
-                            key={tx.fitId + index}
-                            className="border-b border-[var(--border)] last:border-b-0"
-                          >
-                            <td className="px-4 py-3 text-[var(--muted)]">
-                              {formatDate(tx.postedAt)}
-                            </td>
-                            <td className="px-4 py-3 text-[var(--ink)]">
-                              {tx.memo || "Sem descrição"}
-                            </td>
-                            <td
-                              className={`px-4 py-3 text-right font-semibold ${
-                                tx.amount < 0 ? "text-rose-600" : "text-emerald-600"
-                              }`}
+                        {parsedData.transactions.map((tx, index) => {
+                          const effective = getEffectiveCategory(index);
+                          return (
+                            <tr
+                              key={tx.fitId + index}
+                              className="border-b border-[var(--border)] last:border-b-0"
                             >
-                              {tx.amount < 0 ? "- " : "+ "}
-                              {currencyFormatter.format(Math.abs(tx.amount))}
-                            </td>
-                          </tr>
-                        ))}
+                              <td className="px-4 py-3 text-[var(--muted)]">
+                                {formatDate(tx.postedAt)}
+                              </td>
+                              <td className="px-4 py-3 text-[var(--ink)]">
+                                {tx.memo || "Sem descrição"}
+                              </td>
+                              <td className="hidden px-4 py-3 sm:table-cell">
+                                <select
+                                  value={
+                                    categoryOverrides.has(index)
+                                      ? (categoryOverrides.get(index) ?? "__none__")
+                                      : ""
+                                  }
+                                  onChange={(e) => handleCategoryOverride(index, e.target.value)}
+                                  className="w-full max-w-[200px] rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-xs text-[var(--ink)] outline-none transition focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--ring)]"
+                                >
+                                  {effective.isAuto && !categoryOverrides.has(index) ? (
+                                    <option value="">
+                                      {getCategoryLabel(effective.id!)} (Auto)
+                                    </option>
+                                  ) : !categoryOverrides.has(index) ? (
+                                    <option value="">Sem categoria</option>
+                                  ) : null}
+                                  {categoryOverrides.has(index) && (
+                                    <>
+                                      <option value="">
+                                        {ruleMatches.has(index) ? `${getCategoryLabel(ruleMatches.get(index)!.categoryId)} (Auto)` : "Sem categoria"}
+                                      </option>
+                                    </>
+                                  )}
+                                  <option value="__none__">Sem categoria</option>
+                                  {renderCategoryOptions(expenseCategories, "Despesas")}
+                                  {renderCategoryOptions(incomeCategories, "Receitas")}
+                                </select>
+                                {effective.isAuto && !categoryOverrides.has(index) && (
+                                  <span className="ml-1 inline-block rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                                    Auto
+                                  </span>
+                                )}
+                              </td>
+                              <td
+                                className={`px-4 py-3 text-right font-semibold ${
+                                  tx.amount < 0 ? "text-rose-600" : "text-emerald-600"
+                                }`}
+                              >
+                                {tx.amount < 0 ? "- " : "+ "}
+                                {currencyFormatter.format(Math.abs(tx.amount))}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -480,6 +700,14 @@ export default function ImportacoesPage() {
                         {importResult.duplicates}
                       </span>{" "}
                       duplicatas ignoradas
+                    </p>
+                  )}
+                  {importResult.autoCategorized > 0 && (
+                    <p className="mt-1">
+                      <span className="font-semibold text-blue-600">
+                        {importResult.autoCategorized}
+                      </span>{" "}
+                      transações categorizadas automaticamente
                     </p>
                   )}
                 </div>
