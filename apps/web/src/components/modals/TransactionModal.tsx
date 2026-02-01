@@ -70,6 +70,7 @@ export function TransactionModal() {
     transactionModal,
     closeTransactionModal,
     triggerRefresh,
+    activeMembership,
   } = useApp();
 
   // Form state
@@ -117,6 +118,7 @@ export function TransactionModal() {
   // Derived: editing mode
   const isEditing = Boolean(transactionModal.editTransaction);
   const editTx = transactionModal.editTransaction;
+  const isOFXTransaction = Boolean(editTx?.source === "ofx" || editTx?.external_id);
 
   // Reset form when modal opens
   const prevIsOpen = useRef(false);
@@ -242,6 +244,17 @@ export function TransactionModal() {
   const categoryPlaceholder = transactionType
     ? `Categoria de ${activeTypeLabel.toLowerCase()}`
     : "Selecione o tipo primeiro";
+
+  // Reconciled period warning
+  const selectedAccountForReconciliation = !isEditing ? accounts.find((a) => a.id === transactionAccountId) : null;
+  const isInReconciledPeriod = Boolean(
+    selectedAccountForReconciliation?.reconciled_until &&
+    transactionDate &&
+    transactionDate <= selectedAccountForReconciliation.reconciled_until,
+  );
+  const userRole = activeMembership?.role;
+  const isAdminUser = userRole === "owner" || userRole === "admin";
+  const showReconciledWarning = isInReconciledPeriod && isAdminUser;
 
   // Destination accounts (for transfers)
   const destinationAccounts = accounts.filter(
@@ -376,6 +389,21 @@ export function TransactionModal() {
       return;
     }
 
+    // Check reconciled period for manual transactions (not editing)
+    if (!isEditing && transactionAccountId) {
+      const selectedAccount = accounts.find((a) => a.id === transactionAccountId);
+      if (selectedAccount?.reconciled_until && transactionDate <= selectedAccount.reconciled_until) {
+        const userRole = activeMembership?.role;
+        const isAdmin = userRole === "owner" || userRole === "admin";
+        if (!isAdmin) {
+          setTransactionError(
+            `Período reconciliado até ${selectedAccount.reconciled_until}. Lançamentos manuais neste período exigem permissão de administrador.`,
+          );
+          return;
+        }
+      }
+    }
+
     const submitter = (event.nativeEvent as SubmitEvent).submitter as
       | HTMLButtonElement
       | null;
@@ -392,6 +420,7 @@ export function TransactionModal() {
           description: transactionDescription.trim() || null,
           category_id: transactionCategoryId || null,
           posted_at: transactionDate,
+          auto_categorized: false,
         })
         .eq("id", editTx.id);
       if (error) {
@@ -731,54 +760,65 @@ export function TransactionModal() {
                   <label className="text-xs font-semibold text-[var(--muted)]">
                     Data
                   </label>
-                  <div className="grid gap-2">
-                    <div
-                      role="group"
-                      className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
-                    >
-                      {(
-                        [
-                          { label: "Hoje", value: "today" },
-                          { label: "Ontem", value: "yesterday" },
-                          { label: "Outros", value: "custom" },
-                        ] as const
-                      ).map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => applyDatePreset(option.value)}
-                          className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
-                            datePreset === option.value
-                              ? "bg-white text-[var(--accent-strong)] shadow-sm"
-                              : "text-[var(--muted)] hover:text-[var(--ink)]"
-                          }`}
-                          aria-pressed={datePreset === option.value}
-                        >
-                          <span className="block truncate">{option.label}</span>
-                        </button>
-                      ))}
+                  {isEditing && isOFXTransaction ? (
+                    <div className="grid gap-2">
+                      <div className="w-full rounded-xl border border-[var(--border)] bg-slate-50 px-4 py-3 text-sm font-semibold text-[var(--muted)]">
+                        {selectedDateLabel}
+                      </div>
+                      <p className="text-xs text-amber-600">
+                        Data não editável — veio do extrato bancário.
+                      </p>
                     </div>
-                    {datePreset === "custom" ? (
-                      <button
-                        type="button"
-                        onClick={openCalendarPicker}
-                        className="flex w-full items-center justify-between rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
+                  ) : (
+                    <div className="grid gap-2">
+                      <div
+                        role="group"
+                        className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
                       >
-                        <span>{selectedDateLabel}</span>
-                        <svg
-                          aria-hidden="true"
-                          viewBox="0 0 24 24"
-                          className="h-4 w-4 text-[var(--muted)]"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
+                        {(
+                          [
+                            { label: "Hoje", value: "today" },
+                            { label: "Ontem", value: "yesterday" },
+                            { label: "Outros", value: "custom" },
+                          ] as const
+                        ).map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => applyDatePreset(option.value)}
+                            className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
+                              datePreset === option.value
+                                ? "bg-white text-[var(--accent-strong)] shadow-sm"
+                                : "text-[var(--muted)] hover:text-[var(--ink)]"
+                            }`}
+                            aria-pressed={datePreset === option.value}
+                          >
+                            <span className="block truncate">{option.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {datePreset === "custom" ? (
+                        <button
+                          type="button"
+                          onClick={openCalendarPicker}
+                          className="flex w-full items-center justify-between rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)]"
                         >
-                          <rect x="3" y="5" width="18" height="16" rx="2" />
-                          <path d="M16 3v4M8 3v4M3 11h18" />
-                        </svg>
-                      </button>
-                    ) : null}
-                  </div>
+                          <span>{selectedDateLabel}</span>
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className="h-4 w-4 text-[var(--muted)]"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          >
+                            <rect x="3" y="5" width="18" height="16" rx="2" />
+                            <path d="M16 3v4M8 3v4M3 11h18" />
+                          </svg>
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
                 {/* Time */}
@@ -848,6 +888,13 @@ export function TransactionModal() {
                   </p>
                 )}
               </div>
+
+              {/* Reconciled period warning (admin override) */}
+              {showReconciledWarning && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                  Atenção: esta data está no período reconciliado (até {selectedAccountForReconciliation?.reconciled_until}). Como administrador, você pode prosseguir.
+                </div>
+              )}
 
               {/* Error */}
               {transactionError ? (
