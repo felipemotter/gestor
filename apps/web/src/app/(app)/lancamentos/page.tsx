@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Header } from "@/components/layout/Header";
-import { useApp, type Category } from "@/contexts/AppContext";
+import { useApp, type Category, type EditTransaction } from "@/contexts/AppContext";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { currencyFormatter, shortDateFormatter, longDateFormatter } from "@/lib/formatters";
 import { getDateParts, formatDateKey, parseDateValue, getMonthRange, calendarWeekdays } from "@/lib/date-utils";
@@ -43,6 +43,7 @@ type TransactionRow = {
   id: string;
   amount: string;
   description: string | null;
+  original_description: string | null;
   posted_at: string;
   created_at: string;
   source: string | null;
@@ -60,6 +61,7 @@ export default function LancamentosPage() {
     categories,
     archivedCategories,
     dataRefreshCounter,
+    openTransactionModal,
   } = useApp();
 
   // Filter state
@@ -67,6 +69,7 @@ export default function LancamentosPage() {
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
   const [typeFilters, setTypeFilters] = useState<string[]>([...typeFilterAll]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterUncategorized, setFilterUncategorized] = useState(false);
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
   const [pageSize, setPageSize] = useState(50);
@@ -159,7 +162,7 @@ export default function LancamentosPage() {
       let query = supabase
         .from("transactions")
         .select(
-          "id, amount, description, posted_at, created_at, source, external_id, account:accounts(id, name), category:categories(id, name, category_type)",
+          "id, amount, description, original_description, posted_at, created_at, source, external_id, account:accounts(id, name), category:categories(id, name, category_type)",
           { count: "exact" },
         )
         .in("account_id", effectiveAccountIds)
@@ -167,7 +170,9 @@ export default function LancamentosPage() {
         .order("created_at", { ascending: false })
         .range(0, Math.max(limit - 1, 0));
 
-      if (filterCategoryIds.length > 0) {
+      if (filterUncategorized) {
+        query = query.is("category_id", null);
+      } else if (filterCategoryIds.length > 0) {
         query = query.in("category_id", filterCategoryIds);
       }
 
@@ -193,6 +198,7 @@ export default function LancamentosPage() {
         id: item.id,
         amount: item.amount,
         description: item.description,
+        original_description: (item as Record<string, unknown>).original_description as string | null,
         posted_at: item.posted_at,
         created_at: item.created_at,
         source: item.source,
@@ -214,6 +220,7 @@ export default function LancamentosPage() {
     limit,
     filterAccountIds,
     filterCategoryIds,
+    filterUncategorized,
     effectiveStartDate,
     effectiveEndDate,
     dataRefreshCounter,
@@ -223,7 +230,7 @@ export default function LancamentosPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: sync limit with filters
     setLimit(pageSize);
-  }, [pageSize, filterAccountIds, filterCategoryIds, filterStartDate, filterEndDate, activeMonth]);
+  }, [pageSize, filterAccountIds, filterCategoryIds, filterUncategorized, filterStartDate, filterEndDate, activeMonth]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -262,7 +269,7 @@ export default function LancamentosPage() {
           : isAdjustment
             ? adjustmentType
             : tx.category?.category_type;
-      if (!typeValue) return false;
+      if (!typeValue) return true;
       return typeFilters.includes(typeValue);
     });
   }, [transactions, typeFilters]);
@@ -277,6 +284,7 @@ export default function LancamentosPage() {
         : tx.category?.name;
       const haystack = [
         tx.description,
+        tx.original_description,
         categoryLabel,
         tx.account?.name,
         tx.amount,
@@ -302,13 +310,14 @@ export default function LancamentosPage() {
   const hasActiveFilters = Boolean(
     filterAccountIds.length > 0 ||
       filterCategoryIds.length > 0 ||
+      filterUncategorized ||
       searchQuery.trim() ||
       isTypeFilterActive ||
       isCustomDateRange,
   );
   const activeFiltersCount = [
     filterAccountIds.length > 0 ? 1 : 0,
-    filterCategoryIds.length > 0 ? 1 : 0,
+    filterCategoryIds.length > 0 || filterUncategorized ? 1 : 0,
     searchQuery.trim() ? 1 : 0,
     isTypeFilterActive ? 1 : 0,
     isCustomDateRange ? 1 : 0,
@@ -331,7 +340,13 @@ export default function LancamentosPage() {
         className: "bg-slate-100 text-slate-600",
       });
     }
-    if (filterCategoryIds.length > 0) {
+    if (filterUncategorized) {
+      chips.push({
+        key: "uncategorized",
+        label: "Sem categoria",
+        className: "bg-amber-100 text-amber-700",
+      });
+    } else if (filterCategoryIds.length > 0) {
       const selected = filterCategoryIds
         .map((id) => getCategoryDisplayLabel(id, categoriesById[id]?.name))
         .filter(Boolean);
@@ -372,6 +387,7 @@ export default function LancamentosPage() {
   }, [
     filterAccountIds,
     filterCategoryIds,
+    filterUncategorized,
     typeFilters,
     searchQuery,
     isTypeFilterActive,
@@ -435,10 +451,26 @@ export default function LancamentosPage() {
   const clearFilters = () => {
     setFilterAccountIds([]);
     setFilterCategoryIds([]);
+    setFilterUncategorized(false);
     setSearchQuery("");
     setTypeFilters([...typeFilterAll]);
     setFilterStartDate("");
     setFilterEndDate("");
+  };
+
+  // Open edit modal for a transaction
+  const openEditModal = (tx: TransactionRow) => {
+    const edit: EditTransaction = {
+      id: tx.id,
+      description: tx.description,
+      original_description: tx.original_description,
+      category_id: tx.category?.id ?? null,
+      amount: tx.amount,
+      account_id: tx.account?.id ?? null,
+      posted_at: tx.posted_at,
+    };
+    const catType = tx.category?.category_type as "expense" | "income" | undefined;
+    openTransactionModal(catType, edit);
   };
 
   // Calendar functions
@@ -742,6 +774,24 @@ export default function LancamentosPage() {
                       })}
                     </div>
                   </div>
+                  {/* Uncategorized filter */}
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={filterUncategorized}
+                      onClick={() => {
+                        setFilterUncategorized((prev) => !prev);
+                        if (!filterUncategorized) setFilterCategoryIds([]);
+                      }}
+                      className={`h-10 w-full rounded-xl border text-xs font-semibold transition ${
+                        filterUncategorized
+                          ? "bg-amber-100 text-amber-700 border-amber-200"
+                          : "bg-white text-[var(--muted)] border-[var(--border)] hover:text-amber-600 hover:border-amber-200"
+                      }`}
+                    >
+                      Sem categoria
+                    </button>
+                  </div>
                   {/* Search */}
                   <div className="grid gap-2">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
@@ -928,6 +978,23 @@ export default function LancamentosPage() {
               })}
             </div>
 
+            {/* Uncategorized filter */}
+            <button
+              type="button"
+              aria-pressed={filterUncategorized}
+              onClick={() => {
+                setFilterUncategorized((prev) => !prev);
+                if (!filterUncategorized) setFilterCategoryIds([]);
+              }}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold border transition ${
+                filterUncategorized
+                  ? "bg-amber-100 text-amber-700 border-amber-200"
+                  : "bg-white text-[var(--muted)] border-[var(--border)] hover:text-amber-600 hover:border-amber-200"
+              }`}
+            >
+              Sem categoria
+            </button>
+
             {/* Search */}
             <div className="min-w-[220px] flex-1">
               <input
@@ -967,10 +1034,12 @@ export default function LancamentosPage() {
                         const valueTone = isTransferRow || isAdjustRow
                           ? rawValue < 0 ? "text-rose-600" : "text-emerald-600"
                           : categoryType === "expense" ? "text-rose-600" : categoryType === "income" ? "text-emerald-600" : "text-[var(--ink)]";
+                        const isUncategorized = !tx.category?.id && !isTransferRow && !isAdjustRow;
                         const categoryLabel = tx.category?.id
                           ? getCategoryDisplayLabel(tx.category.id, tx.category?.name)
                           : isTransferRow ? "Transferência" : isAdjustRow ? "Ajuste de saldo" : "Sem categoria";
                         const title = tx.description?.trim() || categoryLabel;
+                        const hasOriginalDescription = tx.original_description && tx.original_description !== tx.description;
                         const meta = [categoryLabel, tx.account?.name ?? "Conta"].join(" | ");
                         const iconTone = isTransferRow
                           ? "bg-sky-100 text-sky-600"
@@ -979,12 +1048,19 @@ export default function LancamentosPage() {
                           : categoryType === "expense" ? "bg-rose-100 text-rose-600"
                           : "bg-slate-100 text-slate-500";
 
+                        const canEdit = !isTransferRow && !isAdjustRow;
+
                         return (
-                          <div
+                          <button
                             key={tx.id}
-                            className="flex w-full items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-3 py-2 shadow-sm"
+                            type="button"
+                            disabled={!canEdit}
+                            onClick={() => canEdit && openEditModal(tx)}
+                            className={`flex w-full items-start gap-3 rounded-2xl border border-[var(--border)] bg-white px-3 py-2 text-left shadow-sm transition ${
+                              canEdit ? "cursor-pointer hover:border-[var(--accent)] hover:shadow-md" : ""
+                            }`}
                           >
-                            <div className={`flex h-10 w-10 items-center justify-center rounded-full ${iconTone}`}>
+                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${iconTone}`}>
                               {isTransferRow ? (
                                 <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <path d="M7 7h10" /><path d="M14 4l3 3-3 3" /><path d="M17 17H7" /><path d="M10 20l-3-3 3-3" />
@@ -1005,14 +1081,25 @@ export default function LancamentosPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="break-words text-sm font-semibold leading-snug text-[var(--ink)]">{title}</p>
-                              <p className="mt-0.5 break-words text-xs leading-snug text-[var(--muted)]">{meta}</p>
+                              {hasOriginalDescription && (
+                                <p className="mt-0.5 break-words text-[11px] italic leading-snug text-[var(--muted)]">
+                                  Original: {tx.original_description}
+                                </p>
+                              )}
+                              <p className="mt-0.5 break-words text-xs leading-snug text-[var(--muted)]">
+                                {isUncategorized ? (
+                                  <><span className="font-semibold text-amber-600">Sem categoria</span>{" | "}{tx.account?.name ?? "Conta"}</>
+                                ) : (
+                                  meta
+                                )}
+                              </p>
                             </div>
                             <div className="ml-2 shrink-0 text-right">
                               <p className={`min-w-[88px] text-sm font-semibold ${valueTone}`}>
                                 {sign} {formattedValue}
                               </p>
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -1062,16 +1149,41 @@ export default function LancamentosPage() {
                     const valueTone = isTransferRow || isAdjustRow
                       ? rawValue < 0 ? "text-rose-600" : "text-emerald-600"
                       : categoryType === "expense" ? "text-rose-600" : categoryType === "income" ? "text-emerald-600" : "text-[var(--ink)]";
+                    const isUncategorized = !tx.category?.id && !isTransferRow && !isAdjustRow;
                     const categoryLabel = tx.category?.id
                       ? getCategoryDisplayLabel(tx.category.id, tx.category?.name)
                       : isTransferRow ? "Transferência" : isAdjustRow ? "Ajuste de saldo" : "Sem categoria";
                     const typeLabel = isTransferRow ? "Transferência" : isAdjustRow ? "Ajuste"
                       : categoryType === "income" ? "Receita" : categoryType === "expense" ? "Despesa" : "Outro";
+                    const hasOriginalDescription = tx.original_description && tx.original_description !== tx.description;
+                    const canEdit = !isTransferRow && !isAdjustRow;
 
                     return (
-                      <tr key={tx.id} className="border-b border-[var(--border)] last:border-b-0">
-                        <td className="py-3 text-sm text-[var(--muted)]">{formatDate(tx.posted_at)}</td>
-                        <td className="py-3 text-sm text-[var(--ink)]">{categoryLabel}</td>
+                      <tr
+                        key={tx.id}
+                        onClick={() => canEdit && openEditModal(tx)}
+                        className={`border-b border-[var(--border)] last:border-b-0 ${
+                          canEdit ? "cursor-pointer transition hover:bg-slate-50" : ""
+                        }`}
+                      >
+                        <td className="py-3 text-sm text-[var(--muted)]">
+                          <div>{formatDate(tx.posted_at)}</div>
+                          {tx.description && (
+                            <div className="mt-0.5 text-xs text-[var(--ink)]">{tx.description}</div>
+                          )}
+                          {hasOriginalDescription && (
+                            <div className="mt-0.5 text-[11px] italic text-[var(--muted)]">
+                              Original: {tx.original_description}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 text-sm text-[var(--ink)]">
+                          {isUncategorized ? (
+                            <span className="font-semibold text-amber-600">Sem categoria</span>
+                          ) : (
+                            categoryLabel
+                          )}
+                        </td>
                         <td className="py-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">{typeLabel}</td>
                         <td className="py-3 text-sm text-[var(--muted)]">{tx.account?.name ?? "Conta"}</td>
                         <td className={`py-3 text-right text-sm font-semibold ${valueTone}`}>
@@ -1091,7 +1203,7 @@ export default function LancamentosPage() {
               {showLocalFilter ? (
                 <span>Resultados: {visibleTransactions.length}</span>
               ) : (
-                <span>Exibindo {transactions.length} de {transactionsTotal}</span>
+                <span>Exibindo {visibleTransactions.length} de {transactionsTotal}</span>
               )}
               {showPagination ? (
                 transactions.length < transactionsTotal ? (
