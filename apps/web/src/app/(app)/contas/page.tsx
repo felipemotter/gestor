@@ -6,7 +6,7 @@ import { Header } from "@/components/layout/Header";
 import { AccountModal } from "@/components/modals/AccountModal";
 import { useApp, type Account } from "@/contexts/AppContext";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { currencyFormatter } from "@/lib/formatters";
+import { currencyFormatter, shortDateFormatter } from "@/lib/formatters";
 import { accountIconLookup } from "@/constants/icons";
 
 const supabase = getSupabaseClient();
@@ -467,16 +467,39 @@ export default function ContasPage() {
                     </div>
                     <div className="flex items-center justify-between text-xs text-[var(--muted)]">
                       <span>Ate {monthLabel}</span>
-                      <span
-                        className={
-                          account.visibility === "private"
-                            ? "text-amber-600"
-                            : "text-emerald-600"
-                        }
-                      >
-                        {account.visibility === "private" ? "Privada" : "Compartilhada"}
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className={
+                            account.visibility === "private"
+                              ? "text-amber-600"
+                              : "text-emerald-600"
+                          }
+                        >
+                          {account.visibility === "private" ? "Privada" : "Compartilhada"}
+                        </span>
+                        {account.is_reconcilable ? (
+                          <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                            Reconciliável
+                          </span>
+                        ) : null}
                       </span>
                     </div>
+                    {account.is_reconcilable && account.reconciled_until ? (
+                      <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+                        <span>Ultimo extrato</span>
+                        <span className="font-semibold text-[var(--ink)]">
+                          {shortDateFormatter.format(new Date(account.reconciled_until + "T12:00:00Z"))}
+                        </span>
+                      </div>
+                    ) : null}
+                    {account.is_reconcilable && account.reconciled_balance != null ? (
+                      <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+                        <span>Saldo banco</span>
+                        <span className="font-semibold text-[var(--ink)]">
+                          {currencyFormatter.format(account.reconciled_balance)}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="mt-4 flex items-center gap-2">
