@@ -209,6 +209,7 @@ export const navItems: NavItem[] = [
   },
   {
     label: "Regras e Automação",
+    view: "rules",
     icon: ({ className = "h-5 w-5" }) => (
       <svg
         aria-hidden="true"

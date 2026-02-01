@@ -36,7 +36,36 @@ export type ActiveView =
   | "accounts"
   | "categories"
   | "statement"
-  | "imports";
+  | "imports"
+  | "rules";
+
+export type RuleMatch = {
+  description_contains?: string;
+  description_regex?: string;
+  amount_min?: number;
+  amount_max?: number;
+  amount_exact?: number;
+  day_of_month?: number;
+  date_after?: string;
+  date_before?: string;
+};
+
+export type RuleAction = {
+  set_category_id: string;
+  set_description?: string;
+};
+
+export type Rule = {
+  id: string;
+  family_id: string;
+  name: string;
+  match: RuleMatch;
+  action: RuleAction;
+  is_active: boolean;
+  priority: number;
+  created_by: string | null;
+  created_at: string;
+};
 
 export type TransactionType = "expense" | "income" | "transfer";
 
