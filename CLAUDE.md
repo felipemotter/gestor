@@ -33,14 +33,15 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 │       │       ├── categorias/        # CRUD de categorias (hierárquicas)
 │       │       ├── extrato/           # Extrato com saldo corrido
 │       │       ├── transferencias/    # Transferências entre contas
-│       │       └── importacoes/       # Importação de extratos OFX (upload, preview, confirm)
+│       │       ├── importacoes/       # Importação de extratos OFX (upload, preview, confirm)
+│       │       └── regras/            # CRUD de regras de categorização automática
 │       ├── app/api/
 │       │   └── imports/
 │       │       ├── parse/route.ts     # POST: recebe arquivo OFX, retorna transações parseadas
 │       │       └── confirm/route.ts   # POST: grava transações no banco via service_role
 │       ├── components/
 │       │   ├── charts/          # DonutChart, CashflowChart
-│       │   ├── modals/          # TransactionModal, AccountModal, CategoryModal
+│       │   ├── modals/          # TransactionModal, AccountModal, CategoryModal, RuleModal
 │       │   └── layout/          # Header, Sidebar, MobileMenu
 │       ├── contexts/AppContext.tsx   # Estado global (session, family, accounts, categories)
 │       ├── constants/           # Ícones, navegação, estilos reutilizáveis
@@ -49,7 +50,8 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 │       │   ├── date-utils.ts        # Helpers de data (timezone America/Sao_Paulo)
 │       │   ├── formatters.ts        # Formatação de moeda e datas
 │       │   ├── bank-logos.ts        # Logos de bancos brasileiros
-│       │   └── ofx-parser.ts        # Parser OFX client-side (usa ofx-js)
+│       │   ├── ofx-parser.ts        # Parser OFX client-side (usa ofx-js)
+│       │   └── rule-matcher.ts      # Matching de regras de categorização (funções puras)
 │       └── types/
 │           ├── index.ts             # Tipos compartilhados
 │           └── ofx-js.d.ts          # Type declarations para ofx-js
@@ -77,13 +79,13 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 
 - `families` — grupo familiar (unidade de multi-tenancy)
 - `memberships` — relação user↔family com role (`owner`, `admin`, `member`, `viewer`)
-- `accounts` — contas bancárias (tipo, moeda, visibilidade `shared`/`private`, ícone)
+- `accounts` — contas bancárias (tipo, moeda, visibilidade `shared`/`private`, ícone, `is_reconcilable`, `reconciled_until`, `reconciled_balance`, `ofx_bank_id`, `ofx_account_id`)
 - `categories` — categorias hierárquicas (máx 2 níveis), tipo `income`/`expense`/`transfer`
-- `transactions` — lançamentos com `posted_at`, `occurred_time`, `amount`, `source`, `source_hash`, `original_description`
+- `transactions` — lançamentos com `posted_at`, `occurred_time`, `amount`, `source`, `source_hash`, `original_description`, `auto_categorized`
 - `import_batches` — rastreamento de importações OFX (status: `pending`/`processed`/`failed`)
 - `tags`, `transaction_tags` — tags customizadas
 - `attachments` — anexos com storage path
-- `rules` — regras de automação (match/action em JSONB)
+- `rules` — regras de categorização automática (match/action em JSONB, priority para ordenação)
 - `audit_logs` — log de alterações
 
 ### Funções SQL importantes
@@ -95,6 +97,7 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 - `enforce_balance_adjust_category_usage()` — trigger que protege a categoria "Ajuste de saldo"
 - `enforce_account_archive_balance()` — trigger que exige saldo zero para arquivar conta
 - `prevent_account_delete_with_transactions()` — trigger que impede deletar conta com lançamentos
+- `enforce_reconciled_period()` — trigger que bloqueia lançamentos manuais em período reconciliado (não-admin)
 
 ### RLS
 
@@ -152,9 +155,8 @@ python3 scripts/gen_env.py
 ./scripts/demo.sh reset-and-seed   # Limpa + insere
 
 # Usuários demo (senha: demo123):
-#   demo@demo.com   — usuário standalone
-#   joao@demo.com   — owner da "Família Silva"
-#   maria@demo.com  — member da "Família Silva"
+#   felipe@demo.com — owner da "Família Tirloni Pereira"
+#   flavi@demo.com  — member da "Família Tirloni Pereira"
 ```
 
 ### URLs locais
@@ -172,8 +174,8 @@ python3 scripts/gen_env.py
 
 ## Navegação
 
-Itens implementados: Dashboard, Lançamentos, Contas, Categorias, Transferências, Extrato, Importações.
-Itens no menu (ainda não implementados): Orçamento, Relatórios, Metas, Regras e Automação.
+Itens implementados: Dashboard, Lançamentos, Contas, Categorias, Transferências, Extrato, Importações, Regras e Automação.
+Itens no menu (ainda não implementados): Orçamento, Relatórios, Metas.
 
 ## PWA (Progressive Web App)
 
@@ -197,8 +199,11 @@ Não usar `next-pwa` ou cache offline agressivo — dados dependem do Supabase e
 7. Saldo é calculado: `opening_balance + Σ(income) - Σ(expense) + Σ(transfer) + Σ(adjustment)`
 8. Contas privadas (`visibility = 'private'`) só são visíveis ao dono
 9. Importação OFX: parsing via `ofx-js` no frontend, confirmação via API Route com `service_role`. Deduplicação dupla: por `raw_hash` no `import_batches` (idempotência de arquivo) e por `external_id`/FITID nas `transactions` (idempotência de transação). A descrição original do extrato é preservada em `original_description` para referência ao renomear
-10. Transações importadas podem ser editadas (descrição, categoria, data) via modal de edição acessível pela lista de lançamentos. "Sem categoria" aparece como link clicável que abre o modal de edição
+10. Transações importadas podem ser editadas (descrição, categoria) via modal de edição acessível pela lista de lançamentos. Data de transações OFX não é editável. "Sem categoria" aparece como link clicável que abre o modal de edição
 11. API Route `/api/imports/confirm` requer `SUPABASE_SERVICE_ROLE_KEY` como env var no servidor
+12. **Regras de categorização automática**: regras definidas na tabela `rules` categorizam transações OFX automaticamente. Match por `description_contains` (case-insensitive substring), `description_regex` (regex flag `i`), `amount_exact`/`amount_min`/`amount_max` (valores absolutos), `day_of_month` (1-31), `date_after`/`date_before` (YYYY-MM-DD, inclusivo). Ação: `set_category_id` (obrigatório), `set_description` (opcional). Avaliadas em ordem de `priority` (ASC) + `created_at` (ASC). Aplicadas client-side no preview de importação com overrides manuais, e server-side como fallback para transações sem categoria após inserção
+13. **Auto-match de conta OFX**: contas com `ofx_bank_id` e `ofx_account_id` preenchidos são automaticamente selecionadas na importação OFX quando o `bankId` e `accountId` do arquivo coincidem. Campos editáveis no modal de conta (visíveis quando "Conta reconciliável" está ativo), com opção de preencher via upload de arquivo OFX. Índice único `accounts_ofx_ids_unique` em `(family_id, ofx_bank_id, ofx_account_id)` impede duplicatas
+14. **Reconciliação**: contas marcadas como `is_reconcilable` podem receber importação OFX. Após importação, `reconciled_until` e `reconciled_balance` são atualizados (só avança, nunca retrocede). Lançamentos manuais com data ≤ `reconciled_until` são bloqueados para `member`/`viewer` (trigger SQL + validação frontend). Admin/owner vê aviso mas pode prosseguir. Na tela de importação, só contas reconciliáveis aparecem no seletor
 
 ## Roadmap
 
