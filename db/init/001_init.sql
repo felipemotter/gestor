@@ -98,9 +98,18 @@ create table if not exists public.accounts (
   icon_key text,
   icon_bg text,
   icon_color text,
+  is_reconcilable boolean not null default false,
+  reconciled_until date,
+  reconciled_balance numeric(14,2),
+  ofx_bank_id text,
+  ofx_account_id text,
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
 );
+
+create unique index if not exists accounts_ofx_ids_unique
+  on public.accounts (family_id, ofx_bank_id, ofx_account_id)
+  where ofx_bank_id is not null and ofx_account_id is not null;
 
 create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
@@ -206,6 +215,7 @@ create table if not exists public.transactions (
   source_hash text,
   external_id text,
   original_description text,
+  auto_categorized boolean not null default false,
   import_batch_id uuid references public.import_batches(id),
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
@@ -355,6 +365,46 @@ create trigger trg_accounts_prevent_delete
 before delete on public.accounts
 for each row execute function public.prevent_account_delete_with_transactions();
 
+create or replace function public.enforce_reconciled_period()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  acct_reconciled_until date;
+  acct_family_id uuid;
+begin
+  if coalesce(new.source, '') = 'ofx' then
+    return new;
+  end if;
+
+  select reconciled_until, family_id
+    into acct_reconciled_until, acct_family_id
+    from public.accounts
+    where id = new.account_id;
+
+  if acct_reconciled_until is null then
+    return new;
+  end if;
+
+  if new.posted_at > acct_reconciled_until then
+    return new;
+  end if;
+
+  if public.is_family_admin(acct_family_id) then
+    return new;
+  end if;
+
+  raise exception 'Periodo reconciliado ate %. Lancamentos manuais neste periodo exigem permissao de administrador.', acct_reconciled_until;
+end;
+$$;
+
+drop trigger if exists trg_transactions_reconciled_period on public.transactions;
+create trigger trg_transactions_reconciled_period
+before insert or update of posted_at, source on public.transactions
+for each row execute function public.enforce_reconciled_period();
+
 create table if not exists public.transaction_tags (
   transaction_id uuid not null references public.transactions(id) on delete cascade,
   tag_id uuid not null references public.tags(id) on delete cascade,
@@ -382,9 +432,13 @@ create table if not exists public.rules (
   match jsonb not null default '{}'::jsonb,
   action jsonb not null default '{}'::jsonb,
   is_active boolean not null default true,
+  priority integer not null default 0,
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
 );
+
+create index if not exists rules_family_priority_idx
+  on public.rules (family_id, priority ASC, created_at ASC);
 
 create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
