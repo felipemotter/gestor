@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { useApp, type Account } from "@/contexts/AppContext";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { parseOFX } from "@/lib/ofx-parser";
 import { primaryButton, secondaryButton, DEFAULT_ACCOUNT_ICON_BG, DEFAULT_ACCOUNT_ICON_COLOR } from "@/constants/styles";
 import { baseAccountIconOptions } from "@/constants/icons";
 import { bankLogoOptions } from "@/lib/bank-logos";
@@ -20,7 +21,7 @@ export function AccountModal({
   onClose,
   editingAccount,
 }: AccountModalProps) {
-  const { session, activeFamilyId, loadAccounts, triggerRefresh } = useApp();
+  const { session, activeFamilyId, accounts, loadAccounts, triggerRefresh } = useApp();
 
   // Form state
   const [accountName, setAccountName] = useState("");
@@ -31,6 +32,11 @@ export function AccountModal({
   const [accountIconBg, setAccountIconBg] = useState(DEFAULT_ACCOUNT_ICON_BG);
   const [accountIconColor, setAccountIconColor] = useState(DEFAULT_ACCOUNT_ICON_COLOR);
   const [bankLogoSearch, setBankLogoSearch] = useState("");
+  const [accountIsReconcilable, setAccountIsReconcilable] = useState(false);
+  const [ofxBankId, setOfxBankId] = useState("");
+  const [ofxAccountId, setOfxAccountId] = useState("");
+
+  const [isParsingOfx, setIsParsingOfx] = useState(false);
 
   // Error and loading state
   const [accountError, setAccountError] = useState<string | null>(null);
@@ -61,6 +67,9 @@ export function AccountModal({
         setAccountIconKey(editingAccount.icon_key ?? "initials");
         setAccountIconBg(editingAccount.icon_bg ?? DEFAULT_ACCOUNT_ICON_BG);
         setAccountIconColor(editingAccount.icon_color ?? DEFAULT_ACCOUNT_ICON_COLOR);
+        setAccountIsReconcilable(editingAccount.is_reconcilable ?? false);
+        setOfxBankId(editingAccount.ofx_bank_id ?? "");
+        setOfxAccountId(editingAccount.ofx_account_id ?? "");
       } else {
         setAccountName("");
         setAccountType("checking");
@@ -69,6 +78,9 @@ export function AccountModal({
         setAccountIconKey("initials");
         setAccountIconBg(DEFAULT_ACCOUNT_ICON_BG);
         setAccountIconColor(DEFAULT_ACCOUNT_ICON_COLOR);
+        setAccountIsReconcilable(false);
+        setOfxBankId("");
+        setOfxAccountId("");
       }
       /* eslint-enable react-hooks/set-state-in-effect */
     }
@@ -108,6 +120,33 @@ export function AccountModal({
       )
     : bankLogoOptions;
 
+  // Handle OFX file to extract bank/account IDs
+  const handleOfxFile = useCallback(async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".ofx")) {
+      setAccountError("Formato inválido. Envie um arquivo .ofx");
+      return;
+    }
+    setIsParsingOfx(true);
+    setAccountError(null);
+    try {
+      const text = await file.text();
+      const parsed = await parseOFX(text);
+      setOfxBankId(parsed.bankId);
+      setOfxAccountId(parsed.accountId);
+    } catch {
+      setAccountError("Erro ao ler arquivo OFX.");
+    } finally {
+      setIsParsingOfx(false);
+    }
+  }, []);
+
+  const formatDbError = (message: string): string => {
+    if (message.includes("accounts_ofx_ids_unique")) {
+      return "Já existe outra conta com esses identificadores OFX.";
+    }
+    return message;
+  };
+
   const handleCreateAccount = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAccountError(null);
@@ -142,10 +181,13 @@ export function AccountModal({
       icon_key: accountIconKey,
       icon_bg: accountIconBg,
       icon_color: accountIconColor,
+      is_reconcilable: accountIsReconcilable,
+      ofx_bank_id: ofxBankId.trim() || null,
+      ofx_account_id: ofxAccountId.trim() || null,
     });
 
     if (error) {
-      setAccountError(error.message);
+      setAccountError(formatDbError(error.message));
       setIsCreatingAccount(false);
       return;
     }
@@ -191,11 +233,14 @@ export function AccountModal({
         icon_key: accountIconKey,
         icon_bg: accountIconBg,
         icon_color: accountIconColor,
+        is_reconcilable: accountIsReconcilable,
+        ofx_bank_id: ofxBankId.trim() || null,
+        ofx_account_id: ofxAccountId.trim() || null,
       })
       .eq("id", editingAccount.id);
 
     if (error) {
-      setAccountError(error.message);
+      setAccountError(formatDbError(error.message));
       setIsCreatingAccount(false);
       return;
     }
@@ -205,6 +250,19 @@ export function AccountModal({
     setIsCreatingAccount(false);
     onClose();
   };
+
+  // Check if the current OFX IDs conflict with another account
+  const ofxDuplicateAccount = (() => {
+    const bankTrimmed = ofxBankId.trim();
+    const acctTrimmed = ofxAccountId.trim();
+    if (!bankTrimmed || !acctTrimmed) return null;
+    return accounts.find(
+      (a) =>
+        a.ofx_bank_id === bankTrimmed &&
+        a.ofx_account_id === acctTrimmed &&
+        a.id !== editingAccount?.id,
+    ) ?? null;
+  })();
 
   if (!isOpen) {
     return null;
@@ -446,6 +504,93 @@ export function AccountModal({
                 </select>
               </div>
             </div>
+
+            {/* Reconcilable toggle */}
+            <div className="grid gap-2">
+              <label className="flex cursor-pointer items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={accountIsReconcilable}
+                  onChange={(event) => setAccountIsReconcilable(event.target.checked)}
+                  className="h-4 w-4 accent-[var(--accent)]"
+                />
+                <span className="text-sm font-semibold text-[var(--ink)]">
+                  Conta reconciliável
+                </span>
+              </label>
+              <p className="text-xs text-[var(--muted)]">
+                Habilite para contas que recebem importação de extrato OFX. Após importar, lançamentos manuais no período importado serão bloqueados para não-administradores.
+              </p>
+            </div>
+
+            {/* OFX account identifiers (only when reconcilable) */}
+            {accountIsReconcilable && (
+              <div className="grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <label className="text-xs font-semibold text-[var(--muted)]">
+                      Código do banco (OFX)
+                    </label>
+                    <input
+                      value={ofxBankId}
+                      onChange={(event) => setOfxBankId(event.target.value)}
+                      placeholder="Ex.: 0260"
+                      className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label className="text-xs font-semibold text-[var(--muted)]">
+                      Número da conta (OFX)
+                    </label>
+                    <input
+                      value={ofxAccountId}
+                      onChange={(event) => setOfxAccountId(event.target.value)}
+                      placeholder="Ex.: 3590614-5"
+                      className="w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="relative cursor-pointer">
+                    <span className={`${secondaryButton} inline-flex items-center gap-2 text-xs ${isParsingOfx ? "pointer-events-none opacity-60" : ""}`}>
+                      {isParsingOfx ? (
+                        <>
+                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          Lendo...
+                        </>
+                      ) : (
+                        <>
+                          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                          </svg>
+                          Preencher via arquivo OFX
+                        </>
+                      )}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".ofx"
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleOfxFile(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <span className="text-xs text-[var(--muted)]">
+                    Extrai o banco e conta do arquivo
+                  </span>
+                </div>
+                {ofxDuplicateAccount && (
+                  <p className="text-xs text-amber-600">
+                    Esses identificadores já estão em uso pela conta &quot;{ofxDuplicateAccount.name}&quot;.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Error */}
             {accountError ? (
