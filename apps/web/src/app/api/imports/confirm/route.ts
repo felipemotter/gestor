@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
       account_id: accountId,
       amount: tx.amount,
       description: tx.memo,
+      original_description: tx.memo,
       posted_at: tx.postedAt,
       source: "ofx",
       source_hash: tx.hash,
