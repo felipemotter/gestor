@@ -79,7 +79,7 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 - `memberships` — relação user↔family com role (`owner`, `admin`, `member`, `viewer`)
 - `accounts` — contas bancárias (tipo, moeda, visibilidade `shared`/`private`, ícone)
 - `categories` — categorias hierárquicas (máx 2 níveis), tipo `income`/`expense`/`transfer`
-- `transactions` — lançamentos com `posted_at`, `occurred_time`, `amount`, `source`, `source_hash`
+- `transactions` — lançamentos com `posted_at`, `occurred_time`, `amount`, `source`, `source_hash`, `original_description`
 - `import_batches` — rastreamento de importações OFX (status: `pending`/`processed`/`failed`)
 - `tags`, `transaction_tags` — tags customizadas
 - `attachments` — anexos com storage path
@@ -196,8 +196,9 @@ Não usar `next-pwa` ou cache offline agressivo — dados dependem do Supabase e
 6. Importações OFX usam `source_hash` para **deduplicação idempotente**
 7. Saldo é calculado: `opening_balance + Σ(income) - Σ(expense) + Σ(transfer) + Σ(adjustment)`
 8. Contas privadas (`visibility = 'private'`) só são visíveis ao dono
-9. Importação OFX: parsing via `ofx-js` no frontend, confirmação via API Route com `service_role`. Deduplicação dupla: por `raw_hash` no `import_batches` (idempotência de arquivo) e por `external_id`/FITID nas `transactions` (idempotência de transação)
-10. API Route `/api/imports/confirm` requer `SUPABASE_SERVICE_ROLE_KEY` como env var no servidor
+9. Importação OFX: parsing via `ofx-js` no frontend, confirmação via API Route com `service_role`. Deduplicação dupla: por `raw_hash` no `import_batches` (idempotência de arquivo) e por `external_id`/FITID nas `transactions` (idempotência de transação). A descrição original do extrato é preservada em `original_description` para referência ao renomear
+10. Transações importadas podem ser editadas (descrição, categoria, data) via modal de edição acessível pela lista de lançamentos. "Sem categoria" aparece como link clicável que abre o modal de edição
+11. API Route `/api/imports/confirm` requer `SUPABASE_SERVICE_ROLE_KEY` como env var no servidor
 
 ## Roadmap
 
