@@ -5,12 +5,20 @@ import type { ParsedTransaction } from "@/lib/ofx-parser";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+type TransactionWithCategory = ParsedTransaction & {
+  category_id?: string | null;
+  override_description?: string;
+};
+
 type ImportRequest = {
   accountId: string;
   familyId: string;
-  transactions: ParsedTransaction[];
+  transactions: TransactionWithCategory[];
   source: string;
   rawHash: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  ledgerBalance?: number | null;
 };
 
 export async function POST(request: NextRequest) {
@@ -45,7 +53,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: ImportRequest = await request.json();
-    const { accountId, familyId, transactions, source, rawHash } = body;
+    const { accountId, familyId, transactions, source, rawHash, startDate, endDate, ledgerBalance } = body;
 
     if (!accountId || !familyId || !transactions?.length) {
       return NextResponse.json(
@@ -81,6 +89,9 @@ export async function POST(request: NextRequest) {
         metadata: {
           transaction_count: transactions.length,
           imported_at: new Date().toISOString(),
+          date_start: startDate ?? null,
+          date_end: endDate ?? null,
+          ledger_balance: ledgerBalance ?? null,
         },
         created_by: user.id,
       })
@@ -126,28 +137,38 @@ export async function POST(request: NextRequest) {
         success: true,
         imported: 0,
         duplicates: transactions.length,
+        autoCategorized: 0,
         batchId: batch.id,
       });
     }
 
-    // Insert transactions
-    const transactionsToInsert = newTransactions.map((tx) => ({
-      account_id: accountId,
-      amount: tx.amount,
-      description: tx.memo,
-      original_description: tx.memo,
-      posted_at: tx.postedAt,
-      source: "ofx",
-      source_hash: tx.hash,
-      external_id: tx.fitId,
-      import_batch_id: batch.id,
-      // Category will be null - user can categorize later
-      category_id: null,
-    }));
+    // Count transactions with client-side categories
+    let autoCategorized = 0;
 
-    const { error: insertError } = await supabase
+    // Insert transactions
+    const transactionsToInsert = newTransactions.map((tx) => {
+      const hasCategoryFromClient = tx.category_id != null;
+      if (hasCategoryFromClient) autoCategorized++;
+
+      return {
+        account_id: accountId,
+        amount: tx.amount,
+        description: tx.override_description || tx.memo,
+        original_description: tx.memo,
+        posted_at: tx.postedAt,
+        source: "ofx",
+        source_hash: tx.hash,
+        external_id: tx.fitId,
+        import_batch_id: batch.id,
+        category_id: tx.category_id ?? null,
+        auto_categorized: hasCategoryFromClient,
+      };
+    });
+
+    const { data: insertedRows, error: insertError } = await supabase
       .from("transactions")
-      .insert(transactionsToInsert);
+      .insert(transactionsToInsert)
+      .select("id, category_id, original_description, amount");
 
     if (insertError) {
       console.error("Error inserting transactions:", insertError);
@@ -168,6 +189,94 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Server-side fallback: apply rules to uncategorized transactions
+    const uncategorizedRows = (insertedRows ?? []).filter((row) => !row.category_id);
+    if (uncategorizedRows.length > 0) {
+      // Create a service_role client for reading rules (bypasses RLS)
+      const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
+
+      const { data: rules } = await serviceClient
+        .from("rules")
+        .select("id, match, action, priority, created_at")
+        .eq("family_id", familyId)
+        .eq("is_active", true)
+        .order("priority", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      if (rules && rules.length > 0) {
+        for (const row of uncategorizedRows) {
+          const tx = {
+            original_description: row.original_description,
+            amount: Number(row.amount),
+          };
+
+          for (const rule of rules) {
+            const match = rule.match as Record<string, unknown>;
+            const action = rule.action as Record<string, unknown>;
+
+            let matched = true;
+            const desc = (tx.original_description ?? "").toLowerCase();
+            const absAmount = Math.abs(tx.amount);
+
+            if (match.description_contains) {
+              if (!desc.includes(String(match.description_contains).toLowerCase())) {
+                matched = false;
+              }
+            }
+
+            if (matched && match.description_regex) {
+              try {
+                const regex = new RegExp(String(match.description_regex), "i");
+                if (!regex.test(tx.original_description ?? "")) {
+                  matched = false;
+                }
+              } catch {
+                matched = false;
+              }
+            }
+
+            if (matched && match.amount_exact != null) {
+              if (Math.abs(absAmount - Math.abs(Number(match.amount_exact))) > 0.009) {
+                matched = false;
+              }
+            }
+
+            if (matched && match.amount_min != null) {
+              if (absAmount < Number(match.amount_min)) {
+                matched = false;
+              }
+            }
+
+            if (matched && match.amount_max != null) {
+              if (absAmount > Number(match.amount_max)) {
+                matched = false;
+              }
+            }
+
+            if (matched && action.set_category_id) {
+              const updateData: Record<string, unknown> = {
+                category_id: action.set_category_id,
+                auto_categorized: true,
+              };
+              if (action.set_description) {
+                updateData.description = action.set_description;
+              }
+
+              const { error: updateError } = await serviceClient
+                .from("transactions")
+                .update(updateData)
+                .eq("id", row.id);
+
+              if (!updateError) {
+                autoCategorized++;
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+
     // Update batch status to processed
     await supabase
       .from("import_batches")
@@ -177,14 +286,47 @@ export async function POST(request: NextRequest) {
         metadata: {
           transaction_count: newTransactions.length,
           skipped_duplicates: transactions.length - newTransactions.length,
+          auto_categorized: autoCategorized,
+          date_start: startDate ?? null,
+          date_end: endDate ?? null,
+          ledger_balance: ledgerBalance ?? null,
         },
       })
       .eq("id", batch.id);
+
+    // Update account reconciliation state (only advance, never retrocede)
+    if (endDate) {
+      const updateData: Record<string, unknown> = {
+        reconciled_until: endDate,
+      };
+      if (ledgerBalance != null) {
+        updateData.reconciled_balance = ledgerBalance;
+      }
+
+      // Only update if the new endDate is after the current reconciled_until
+      const { data: currentAccount } = await supabase
+        .from("accounts")
+        .select("reconciled_until")
+        .eq("id", accountId)
+        .single();
+
+      const shouldUpdate =
+        !currentAccount?.reconciled_until ||
+        endDate > currentAccount.reconciled_until;
+
+      if (shouldUpdate) {
+        await supabase
+          .from("accounts")
+          .update(updateData)
+          .eq("id", accountId);
+      }
+    }
 
     return NextResponse.json({
       success: true,
       imported: newTransactions.length,
       duplicates: transactions.length - newTransactions.length,
+      autoCategorized,
       batchId: batch.id,
     });
   } catch (error) {
