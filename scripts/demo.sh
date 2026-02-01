@@ -53,9 +53,8 @@ do_seed() {
   echo "========================================="
   echo "  Demo users created:"
   echo "========================================="
-  echo "  demo@demo.com  / demo123  (standalone)"
-  echo "  joao@demo.com  / demo123  (owner - Família Silva)"
-  echo "  maria@demo.com / demo123  (member - Família Silva)"
+  echo "  felipe@demo.com / demo123  (owner - Família Tirloni Pereira)"
+  echo "  flavi@demo.com  / demo123  (member - Família Tirloni Pereira)"
   echo "========================================="
   echo ""
 }
