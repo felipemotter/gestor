@@ -48,9 +48,20 @@ export type Membership = {
   family: { id: string; name: string; created_at: string } | null;
 };
 
+export type EditTransaction = {
+  id: string;
+  description: string | null;
+  original_description: string | null;
+  category_id: string | null;
+  amount: string;
+  account_id: string | null;
+  posted_at: string;
+};
+
 type TransactionModalState = {
   isOpen: boolean;
   initialType?: "expense" | "income" | "transfer";
+  editTransaction?: EditTransaction;
 };
 
 type AppContextType = {
@@ -106,7 +117,7 @@ type AppContextType = {
 
   // Transaction Modal
   transactionModal: TransactionModalState;
-  openTransactionModal: (type?: "expense" | "income" | "transfer") => void;
+  openTransactionModal: (type?: "expense" | "income" | "transfer", editTransaction?: EditTransaction) => void;
   closeTransactionModal: () => void;
 
   // Computed values
@@ -663,8 +674,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Transaction modal handlers
   const openTransactionModal = useCallback(
-    (type?: "expense" | "income" | "transfer") => {
-      setTransactionModal({ isOpen: true, initialType: type });
+    (type?: "expense" | "income" | "transfer", editTransaction?: EditTransaction) => {
+      setTransactionModal({ isOpen: true, initialType: type, editTransaction });
     },
     [],
   );

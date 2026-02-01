@@ -106,33 +106,69 @@ export function TransactionModal() {
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
 
+  // Build category map for parent lookups (needed before useLayoutEffect for edit mode)
+  const categoriesById = [...categories, ...archivedCategories].reduce<
+    Record<string, Category>
+  >((acc, category) => {
+    acc[category.id] = category;
+    return acc;
+  }, {});
+
+  // Derived: editing mode
+  const isEditing = Boolean(transactionModal.editTransaction);
+  const editTx = transactionModal.editTransaction;
+
   // Reset form when modal opens
   const prevIsOpen = useRef(false);
   useLayoutEffect(() => {
     if (transactionModal.isOpen && !prevIsOpen.current) {
       const today = getBrazilToday();
       /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset form when modal opens */
-      setTransactionType(transactionModal.initialType ?? "expense");
-      setTransactionAccountId("");
-      setTransactionDestinationAccountId("");
-      setTransactionCategoryId("");
-      setTransactionAmount("");
-      setTransactionDescription("");
-      setTransactionTime("");
-      setTransactionDate(today);
-      setDatePreset("today");
-      setCalendarTempDate(today);
-      const todayParts = getDateParts(today);
-      if (todayParts) {
-        setCalendarMonth(todayParts.monthIndex);
-        setCalendarYear(todayParts.year);
+      if (editTx) {
+        // Edit mode: pre-fill from existing transaction
+        const cat = editTx.category_id ? categoriesById[editTx.category_id] : null;
+        const catType = cat?.category_type as "expense" | "income" | undefined;
+        setTransactionType(catType ?? transactionModal.initialType ?? "expense");
+        setTransactionAccountId(editTx.account_id ?? "");
+        setTransactionDestinationAccountId("");
+        setTransactionCategoryId(editTx.category_id ?? "");
+        const rawAmount = Number(editTx.amount);
+        setTransactionAmount(Number.isFinite(rawAmount) ? String(Math.abs(rawAmount)) : editTx.amount);
+        setTransactionDescription(editTx.description ?? "");
+        setTransactionTime("");
+        const editDate = editTx.posted_at?.slice(0, 10) || today;
+        setTransactionDate(editDate);
+        setDatePreset("custom");
+        setCalendarTempDate(editDate);
+        const editParts = getDateParts(editDate);
+        if (editParts) {
+          setCalendarMonth(editParts.monthIndex);
+          setCalendarYear(editParts.year);
+        }
+      } else {
+        // Create mode
+        setTransactionType(transactionModal.initialType ?? "expense");
+        setTransactionAccountId("");
+        setTransactionDestinationAccountId("");
+        setTransactionCategoryId("");
+        setTransactionAmount("");
+        setTransactionDescription("");
+        setTransactionTime("");
+        setTransactionDate(today);
+        setDatePreset("today");
+        setCalendarTempDate(today);
+        const todayParts = getDateParts(today);
+        if (todayParts) {
+          setCalendarMonth(todayParts.monthIndex);
+          setCalendarYear(todayParts.year);
+        }
       }
       setTransactionError(null);
       setIsCalendarOpen(false);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
     prevIsOpen.current = transactionModal.isOpen;
-  }, [transactionModal.isOpen, transactionModal.initialType]);
+  }, [transactionModal.isOpen, transactionModal.initialType, editTx, categoriesById]);
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -168,14 +204,6 @@ export function TransactionModal() {
   // Derived state
   const isTransfer = transactionType === "transfer";
   const canCreateTransaction = accounts.length > 0;
-
-  // Build category map for parent lookups
-  const categoriesById = [...categories, ...archivedCategories].reduce<
-    Record<string, Category>
-  >((acc, category) => {
-    acc[category.id] = category;
-    return acc;
-  }, {});
 
   const getCategoryDisplayLabel = (id: string, name: string) => {
     const category = categoriesById[id];
@@ -306,7 +334,7 @@ export function TransactionModal() {
       return;
     }
 
-    if (isTransfer) {
+    if (isTransfer && !isEditing) {
       if (!transactionDestinationAccountId) {
         setTransactionError("Selecione a conta destino.");
         return;
@@ -318,7 +346,7 @@ export function TransactionModal() {
       }
     }
 
-    if (!isTransfer) {
+    if (!isTransfer && !isEditing) {
       if (!transactionCategoryId) {
         setTransactionError("Selecione a categoria.");
         return;
@@ -338,7 +366,7 @@ export function TransactionModal() {
     const normalizedAmount = transactionAmount.replace(",", ".").trim();
     const amountValue = Number(normalizedAmount);
 
-    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+    if (!isEditing && (!Number.isFinite(amountValue) || amountValue <= 0)) {
       setTransactionError("Informe um valor válido.");
       return;
     }
@@ -356,7 +384,20 @@ export function TransactionModal() {
     setIsCreatingTransaction(true);
     let insertError: { message: string } | null = null;
 
-    if (isTransfer) {
+    // Edit mode: update existing transaction
+    if (isEditing && editTx) {
+      const { error } = await supabase
+        .from("transactions")
+        .update({
+          description: transactionDescription.trim() || null,
+          category_id: transactionCategoryId || null,
+          posted_at: transactionDate,
+        })
+        .eq("id", editTx.id);
+      if (error) {
+        insertError = error;
+      }
+    } else if (isTransfer) {
       const transferId =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
@@ -464,16 +505,16 @@ export function TransactionModal() {
         <div className="flex items-start justify-between gap-2 border-b border-[var(--border)] px-4 py-3 sm:border-none sm:px-6 sm:pt-6 sm:pb-0">
           <div className="min-w-0">
             <p className="hidden text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--muted)] sm:block">
-              Novo lançamento
+              {isEditing ? "Editar lançamento" : "Novo lançamento"}
             </p>
             <h2
               id="novo-lançamento-title"
               className="mt-0.5 text-base font-semibold text-[var(--ink)] sm:mt-2 sm:text-xl"
             >
-              Registrar movimentação
+              {isEditing ? "Editar movimentação" : "Registrar movimentação"}
             </h2>
             <p className="mt-1 hidden text-sm text-[var(--muted)] sm:block">
-              Preencha os campos abaixo.
+              {isEditing ? "Altere os campos desejados." : "Preencha os campos abaixo."}
             </p>
           </div>
           <button
@@ -510,37 +551,39 @@ export function TransactionModal() {
               onSubmit={handleCreateTransaction}
             >
               {/* Transaction Type */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[var(--muted)]">
-                  Tipo
-                </label>
-                <div
-                  role="group"
-                  className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
-                >
-                  {transactionTypeOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => {
-                        setTransactionType(option.value);
-                        setTransactionDestinationAccountId("");
-                        setTransactionCategoryId("");
-                      }}
-                      className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
-                        transactionType === option.value
-                          ? (transactionTypeStyles[option.value]?.active ??
-                            "bg-white text-[var(--accent-strong)] shadow-sm")
-                          : (transactionTypeStyles[option.value]?.inactive ??
-                            "text-[var(--muted)] hover:text-[var(--ink)]")
-                      }`}
-                      aria-pressed={transactionType === option.value}
-                    >
-                      <span className="block truncate">{option.label}</span>
-                    </button>
-                  ))}
+              {!isEditing && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-[var(--muted)]">
+                    Tipo
+                  </label>
+                  <div
+                    role="group"
+                    className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
+                  >
+                    {transactionTypeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setTransactionType(option.value);
+                          setTransactionDestinationAccountId("");
+                          setTransactionCategoryId("");
+                        }}
+                        className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
+                          transactionType === option.value
+                            ? (transactionTypeStyles[option.value]?.active ??
+                              "bg-white text-[var(--accent-strong)] shadow-sm")
+                            : (transactionTypeStyles[option.value]?.inactive ??
+                              "text-[var(--muted)] hover:text-[var(--ink)]")
+                        }`}
+                        aria-pressed={transactionType === option.value}
+                      >
+                        <span className="block truncate">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Account & Category/Destination */}
               <div className="grid gap-4 sm:grid-cols-2">
@@ -565,7 +608,8 @@ export function TransactionModal() {
                       onChange={(event) =>
                         setTransactionAccountId(event.target.value)
                       }
-                      className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                      disabled={isEditing}
+                      className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
                     >
                       <option value="">Selecione a conta</option>
                       {accounts.map((account) => (
@@ -678,7 +722,8 @@ export function TransactionModal() {
                       }
                       placeholder="R$ 0,00"
                       inputMode="decimal"
-                      className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
+                      disabled={isEditing}
+                      className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
                     />
                   </div>
                 </div>
@@ -797,6 +842,11 @@ export function TransactionModal() {
                     className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)]"
                   />
                 </div>
+                {isEditing && editTx?.original_description && editTx.original_description !== transactionDescription && (
+                  <p className="mt-1 text-xs italic text-[var(--muted)]">
+                    Original: {editTx.original_description}
+                  </p>
+                )}
               </div>
 
               {/* Error */}
@@ -807,24 +857,37 @@ export function TransactionModal() {
               ) : null}
 
               {/* Submit buttons */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="submit"
-                  data-action="close"
-                  disabled={isCreatingTransaction}
-                  className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
-                >
-                  {isCreatingTransaction ? "Salvando..." : "Salvar e fechar"}
-                </button>
-                <button
-                  type="submit"
-                  data-action="repeat"
-                  disabled={isCreatingTransaction}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {isCreatingTransaction ? "Salvando..." : "Salvar e criar outro"}
-                </button>
-              </div>
+              {isEditing ? (
+                <div>
+                  <button
+                    type="submit"
+                    data-action="close"
+                    disabled={isCreatingTransaction}
+                    className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
+                  >
+                    {isCreatingTransaction ? "Salvando..." : "Salvar"}
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="submit"
+                    data-action="close"
+                    disabled={isCreatingTransaction}
+                    className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
+                  >
+                    {isCreatingTransaction ? "Salvando..." : "Salvar e fechar"}
+                  </button>
+                  <button
+                    type="submit"
+                    data-action="repeat"
+                    disabled={isCreatingTransaction}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isCreatingTransaction ? "Salvando..." : "Salvar e criar outro"}
+                  </button>
+                </div>
+              )}
             </form>
           )}
         </div>
