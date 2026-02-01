@@ -48,6 +48,7 @@ type TransactionRow = {
   created_at: string;
   source: string | null;
   external_id: string | null;
+  auto_categorized: boolean;
   account: { id: string; name: string } | null;
   category: { id: string; name: string; category_type: string } | null;
 };
@@ -162,7 +163,7 @@ export default function LancamentosPage() {
       let query = supabase
         .from("transactions")
         .select(
-          "id, amount, description, original_description, posted_at, created_at, source, external_id, account:accounts(id, name), category:categories(id, name, category_type)",
+          "id, amount, description, original_description, posted_at, created_at, source, external_id, auto_categorized, account:accounts(id, name), category:categories(id, name, category_type)",
           { count: "exact" },
         )
         .in("account_id", effectiveAccountIds)
@@ -203,6 +204,7 @@ export default function LancamentosPage() {
         created_at: item.created_at,
         source: item.source,
         external_id: item.external_id,
+        auto_categorized: (item as Record<string, unknown>).auto_categorized === true,
         account: item.account as unknown as { id: string; name: string } | null,
         category: item.category as unknown as { id: string; name: string; category_type: string } | null,
       }));
@@ -468,6 +470,8 @@ export default function LancamentosPage() {
       amount: tx.amount,
       account_id: tx.account?.id ?? null,
       posted_at: tx.posted_at,
+      source: tx.source,
+      external_id: tx.external_id,
     };
     const catType = tx.category?.category_type as "expense" | "income" | undefined;
     openTransactionModal(catType, edit);
@@ -1025,7 +1029,7 @@ export default function LancamentosPage() {
                         const isAdjustRow = tx.source === "adjustment";
                         const rawValue = Number(tx.amount);
                         const isNumeric = Number.isFinite(rawValue);
-                        const displayValue = (isTransferRow || isAdjustRow) && isNumeric ? Math.abs(rawValue) : rawValue;
+                        const displayValue = isNumeric ? Math.abs(rawValue) : rawValue;
                         const formattedValue = isNumeric ? currencyFormatter.format(displayValue) : tx.amount;
                         const categoryType = tx.category?.category_type;
                         const sign = isTransferRow || isAdjustRow
@@ -1090,7 +1094,7 @@ export default function LancamentosPage() {
                                 {isUncategorized ? (
                                   <><span className="font-semibold text-amber-600">Sem categoria</span>{" | "}{tx.account?.name ?? "Conta"}</>
                                 ) : (
-                                  meta
+                                  <>{meta}{tx.auto_categorized && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-blue-300/60" title="Categorizada automaticamente por regra" />}</>
                                 )}
                               </p>
                             </div>
@@ -1140,7 +1144,7 @@ export default function LancamentosPage() {
                     const isAdjustRow = tx.source === "adjustment";
                     const rawValue = Number(tx.amount);
                     const isNumeric = Number.isFinite(rawValue);
-                    const displayValue = (isTransferRow || isAdjustRow) && isNumeric ? Math.abs(rawValue) : rawValue;
+                    const displayValue = isNumeric ? Math.abs(rawValue) : rawValue;
                     const formattedValue = isNumeric ? currencyFormatter.format(displayValue) : tx.amount;
                     const categoryType = tx.category?.category_type;
                     const sign = isTransferRow || isAdjustRow
@@ -1181,7 +1185,7 @@ export default function LancamentosPage() {
                           {isUncategorized ? (
                             <span className="font-semibold text-amber-600">Sem categoria</span>
                           ) : (
-                            categoryLabel
+                            <>{categoryLabel}{tx.auto_categorized && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-blue-300/60" title="Categorizada automaticamente por regra" />}</>
                           )}
                         </td>
                         <td className="py-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">{typeLabel}</td>
