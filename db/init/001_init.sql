@@ -205,6 +205,7 @@ create table if not exists public.transactions (
   source text,
   source_hash text,
   external_id text,
+  original_description text,
   import_batch_id uuid references public.import_batches(id),
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
