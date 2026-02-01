@@ -27,6 +27,11 @@ export type Account = {
   icon_bg: string | null;
   icon_color: string | null;
   is_archived: boolean;
+  is_reconcilable: boolean;
+  reconciled_until: string | null;
+  reconciled_balance: number | null;
+  ofx_bank_id: string | null;
+  ofx_account_id: string | null;
   created_at: string;
 };
 
@@ -56,6 +61,8 @@ export type EditTransaction = {
   amount: string;
   account_id: string | null;
   posted_at: string;
+  source: string | null;
+  external_id: string | null;
 };
 
 type TransactionModalState = {
@@ -251,7 +258,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const baseSelectLegacy =
       "id, family_id, name, account_type, currency, visibility, owner_user_id, opening_balance, created_at";
     const baseSelect = `${baseSelectLegacy}, icon_key, icon_bg, icon_color`;
-    const selectWithArchive = `${baseSelect}, is_archived`;
+    const selectWithArchive = `${baseSelect}, is_archived, is_reconcilable, reconciled_until, reconciled_balance, ofx_bank_id, ofx_account_id`;
+
+    const reconciliationDefaults = {
+      is_reconcilable: false,
+      reconciled_until: null,
+      reconciled_balance: null,
+      ofx_bank_id: null,
+      ofx_account_id: null,
+    };
 
     const { data, error } = await supabase
       .from("accounts")
@@ -285,6 +300,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           icon_key: (account.icon_key as string | null) ?? null,
           icon_bg: (account.icon_bg as string | null) ?? null,
           icon_color: (account.icon_color as string | null) ?? null,
+          ...reconciliationDefaults,
         })) as Account[];
         setAccounts(normalized);
         setIsLoadingAccounts(false);
@@ -308,6 +324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           icon_key: null,
           icon_bg: null,
           icon_color: null,
+          ...reconciliationDefaults,
         })) as Account[];
         setAccounts(normalized);
         setIsLoadingAccounts(false);
@@ -324,6 +341,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       icon_key: account.icon_key ?? null,
       icon_bg: account.icon_bg ?? null,
       icon_color: account.icon_color ?? null,
+      is_reconcilable: account.is_reconcilable ?? false,
+      reconciled_until: account.reconciled_until ?? null,
+      reconciled_balance: account.reconciled_balance != null ? Number(account.reconciled_balance) : null,
+      ofx_bank_id: account.ofx_bank_id ?? null,
+      ofx_account_id: account.ofx_account_id ?? null,
     }));
     setAccounts(normalized);
     setIsLoadingAccounts(false);
@@ -334,7 +356,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const baseSelectLegacy =
       "id, family_id, name, account_type, currency, visibility, owner_user_id, opening_balance, created_at";
     const baseSelect = `${baseSelectLegacy}, icon_key, icon_bg, icon_color`;
-    const selectWithArchive = `${baseSelect}, is_archived`;
+    const selectWithArchive = `${baseSelect}, is_archived, is_reconcilable, reconciled_until, reconciled_balance, ofx_bank_id, ofx_account_id`;
+
+    const reconciliationDefaults = {
+      is_reconcilable: false,
+      reconciled_until: null,
+      reconciled_balance: null,
+      ofx_bank_id: null,
+      ofx_account_id: null,
+    };
 
     const { data, error } = await supabase
       .from("accounts")
@@ -367,6 +397,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           icon_key: null,
           icon_bg: null,
           icon_color: null,
+          ...reconciliationDefaults,
         }));
         setArchivedAccounts(normalized);
         setIsLoadingArchivedAccounts(false);
@@ -383,6 +414,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       icon_key: account.icon_key ?? null,
       icon_bg: account.icon_bg ?? null,
       icon_color: account.icon_color ?? null,
+      is_reconcilable: account.is_reconcilable ?? false,
+      reconciled_until: account.reconciled_until ?? null,
+      reconciled_balance: account.reconciled_balance != null ? Number(account.reconciled_balance) : null,
+      ofx_bank_id: account.ofx_bank_id ?? null,
+      ofx_account_id: account.ofx_account_id ?? null,
     }));
     setArchivedAccounts(normalized);
     setIsLoadingArchivedAccounts(false);
@@ -622,6 +658,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [
     activeFamilyId,
     session?.access_token,
+    dataRefreshCounter,
     loadAccounts,
     loadCategories,
     loadArchivedCategories,
