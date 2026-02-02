@@ -103,6 +103,12 @@ export function TransactionModal() {
     return parts ? parts.year : new Date().getFullYear();
   });
 
+  // Reconciliation hint state
+  const [showHint, setShowHint] = useState(false);
+  const [hintDescription, setHintDescription] = useState("");
+  const [hintAmountMin, setHintAmountMin] = useState("");
+  const [hintAmountMax, setHintAmountMax] = useState("");
+
   // Error and loading state
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
@@ -167,6 +173,19 @@ export function TransactionModal() {
       }
       setTransactionError(null);
       setIsCalendarOpen(false);
+      // Reset hint fields
+      if (editTx) {
+        const hint = (editTx as { reconciliation_hint?: { match_description?: string; match_amount_min?: number; match_amount_max?: number } | null }).reconciliation_hint;
+        setHintDescription(hint?.match_description ?? "");
+        setHintAmountMin(hint?.match_amount_min != null ? String(hint.match_amount_min) : "");
+        setHintAmountMax(hint?.match_amount_max != null ? String(hint.match_amount_max) : "");
+        setShowHint(Boolean(hint));
+      } else {
+        setHintDescription("");
+        setHintAmountMin("");
+        setHintAmountMax("");
+        setShowHint(false);
+      }
       /* eslint-enable react-hooks/set-state-in-effect */
     }
     prevIsOpen.current = transactionModal.isOpen;
@@ -244,6 +263,12 @@ export function TransactionModal() {
   const categoryPlaceholder = transactionType
     ? `Categoria de ${activeTypeLabel.toLowerCase()}`
     : "Selecione o tipo primeiro";
+
+  // Check if editing account is reconcilable (for hint section)
+  const editAccountIsReconcilable = isEditing && editTx?.account_id
+    ? Boolean(accounts.find((a) => a.id === editTx.account_id)?.is_reconcilable)
+    : false;
+  const showHintSection = isEditing && !isOFXTransaction && editAccountIsReconcilable;
 
   // Reconciled period warning
   const selectedAccountForReconciliation = !isEditing ? accounts.find((a) => a.id === transactionAccountId) : null;
@@ -414,14 +439,54 @@ export function TransactionModal() {
 
     // Edit mode: update existing transaction
     if (isEditing && editTx) {
+      // Build reconciliation_hint JSONB
+      let reconciliationHint: Record<string, unknown> | null = null;
+      if (showHintSection) {
+        const hasHintData = hintDescription.trim() || hintAmountMin || hintAmountMax;
+        if (hasHintData) {
+          reconciliationHint = {};
+          if (hintDescription.trim()) {
+            reconciliationHint.match_description = hintDescription.trim();
+          }
+          if (hintAmountMin) {
+            reconciliationHint.match_amount_min = Number(hintAmountMin);
+          }
+          if (hintAmountMax) {
+            reconciliationHint.match_amount_max = Number(hintAmountMax);
+          }
+        }
+      }
+
+      // Determine if category type changed and flip amount sign accordingly
+      const oldCat = editTx.category_id ? categoriesById[editTx.category_id] : null;
+      const newCat = transactionCategoryId ? categoriesById[transactionCategoryId] : null;
+      const oldType = oldCat?.category_type;
+      const newType = newCat?.category_type;
+      const currentAmount = Number(editTx.amount);
+
+      const updatePayload: Record<string, unknown> = {
+        description: transactionDescription.trim() || null,
+        category_id: transactionCategoryId || null,
+        posted_at: transactionDate,
+        auto_categorized: false,
+      };
+
+      // Flip sign when switching between expense and income
+      if (
+        Number.isFinite(currentAmount) &&
+        oldType && newType && oldType !== newType &&
+        ((oldType === "expense" && newType === "income") ||
+         (oldType === "income" && newType === "expense"))
+      ) {
+        updatePayload.amount = -currentAmount;
+      }
+      if (showHintSection) {
+        updatePayload.reconciliation_hint = reconciliationHint;
+      }
+
       const { error } = await supabase
         .from("transactions")
-        .update({
-          description: transactionDescription.trim() || null,
-          category_id: transactionCategoryId || null,
-          posted_at: transactionDate,
-          auto_categorized: false,
-        })
+        .update(updatePayload)
         .eq("id", editTx.id);
       if (error) {
         insertError = error;
@@ -479,10 +544,11 @@ export function TransactionModal() {
       }
     } else {
       const occurredTimeValue = transactionTime.trim() || null;
+      const signedAmount = transactionType === "expense" ? -Math.abs(amountValue) : Math.abs(amountValue);
       const { error } = await supabase.from("transactions").insert({
         account_id: transactionAccountId,
         category_id: transactionCategoryId,
-        amount: amountValue,
+        amount: signedAmount,
         currency: "BRL",
         description: transactionDescription.trim() || null,
         posted_at: transactionDate,
@@ -888,6 +954,74 @@ export function TransactionModal() {
                   </p>
                 )}
               </div>
+
+              {/* Reconciliation hint (manual transactions in reconcilable accounts) */}
+              {showHintSection ? (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowHint((prev) => !prev)}
+                    className="flex items-center gap-2 text-xs font-semibold text-[var(--muted)] transition hover:text-[var(--ink)]"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className={`h-3.5 w-3.5 transition ${showHint ? "rotate-90" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                    Dica de reconciliacao
+                  </button>
+                  {showHint ? (
+                    <div className="mt-2 grid gap-3 rounded-xl border border-[var(--border)] bg-slate-50 p-3 sm:grid-cols-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold text-[var(--muted)]">
+                          Descricao OFX contem
+                        </label>
+                        <input
+                          value={hintDescription}
+                          onChange={(e) => setHintDescription(e.target.value)}
+                          placeholder="PIX FULANO"
+                          className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold text-[var(--muted)]">
+                          Valor minimo
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={hintAmountMin}
+                          onChange={(e) => setHintAmountMin(e.target.value)}
+                          placeholder="0.00"
+                          className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold text-[var(--muted)]">
+                          Valor maximo
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={hintAmountMax}
+                          onChange={(e) => setHintAmountMax(e.target.value)}
+                          placeholder="0.00"
+                          className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {/* Reconciled period warning (admin override) */}
               {showReconciledWarning && (

@@ -7,6 +7,7 @@ import { AccountModal } from "@/components/modals/AccountModal";
 import { useApp, type Account } from "@/contexts/AppContext";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { currencyFormatter, shortDateFormatter } from "@/lib/formatters";
+import { checkAccountDiscrepancy, type BalanceDiscrepancy } from "@/lib/balance-checker";
 import { accountIconLookup } from "@/constants/icons";
 
 const supabase = getSupabaseClient();
@@ -21,10 +22,12 @@ export default function ContasPage() {
     accountBalances,
     totalBalance,
     activeMonth,
+    categories,
     isLoadingArchivedAccounts,
     loadAccounts,
     loadArchivedAccounts,
     openTransactionModal,
+    triggerRefresh,
   } = useApp();
 
   // UI state
@@ -33,6 +36,10 @@ export default function ContasPage() {
   const [accountTxnCounts, setAccountTxnCounts] = useState<Record<string, number | undefined>>({});
   const [accountActionError, setAccountActionError] = useState<string | null>(null);
   const [accountActionLoadingId, setAccountActionLoadingId] = useState<string | null>(null);
+
+  // Discrepancy state
+  const [discrepancies, setDiscrepancies] = useState<Record<string, BalanceDiscrepancy>>({});
+  const [adjustingAccountId, setAdjustingAccountId] = useState<string | null>(null);
 
   // Modal state
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -73,6 +80,75 @@ export default function ContasPage() {
     };
   }, [openAccountMenuId]);
 
+  // Check discrepancies for reconcilable accounts
+  useEffect(() => {
+    const reconcilable = accounts.filter(
+      (a) => a.is_reconcilable && a.reconciled_balance != null && a.reconciled_until,
+    );
+    if (reconcilable.length === 0) {
+      setDiscrepancies({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(reconcilable.map((a) => checkAccountDiscrepancy(a))).then(
+      (results) => {
+        if (cancelled) return;
+        const next: Record<string, BalanceDiscrepancy> = {};
+        for (const disc of results) {
+          if (disc) next[disc.accountId] = disc;
+        }
+        setDiscrepancies(next);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [accounts]);
+
+  // Quick balance adjust handler
+  const handleQuickAdjust = async (account: Account) => {
+    const disc = discrepancies[account.id];
+    if (!disc || !activeFamilyId) return;
+
+    const adjustCategory = categories.find((c) => c.name === "Ajuste de saldo");
+    if (!adjustCategory) {
+      setAccountActionError('Categoria "Ajuste de saldo" nao encontrada.');
+      return;
+    }
+
+    const adjustAmount = -disc.difference;
+    if (
+      !window.confirm(
+        `Criar ajuste de ${currencyFormatter.format(adjustAmount)} em ${shortDateFormatter.format(new Date(disc.reconciledUntil + "T12:00:00Z"))} para corrigir a divergencia?`,
+      )
+    ) {
+      return;
+    }
+
+    setAdjustingAccountId(account.id);
+    setAccountActionError(null);
+
+    const { error } = await supabase.from("transactions").insert({
+      account_id: account.id,
+      family_id: activeFamilyId,
+      amount: adjustAmount,
+      description: "Ajuste de saldo (reconciliacao)",
+      posted_at: disc.reconciledUntil,
+      source: "adjustment",
+      category_id: adjustCategory.id,
+    });
+
+    if (error) {
+      setAccountActionError(error.message);
+      setAdjustingAccountId(null);
+      return;
+    }
+
+    triggerRefresh();
+    await loadAccounts(activeFamilyId);
+    setAdjustingAccountId(null);
+  };
+
   // Helpers
   const getAccountTransactionCount = useCallback(async (accountId: string) => {
     const { count, error } = await supabase
@@ -87,7 +163,7 @@ export default function ContasPage() {
     const opening = account.opening_balance ?? 0;
     const { data, error } = await supabase
       .from("transactions")
-      .select("amount, source, category:categories(category_type)")
+      .select("amount")
       .eq("account_id", account.id);
     if (error) return null;
 
@@ -95,18 +171,7 @@ export default function ContasPage() {
     (data ?? []).forEach((item) => {
       const amountValue = Number(item.amount);
       if (!Number.isFinite(amountValue)) return;
-      const category = item.category as unknown as { category_type: string } | null;
-      let delta = 0;
-      if (item.source === "adjustment") {
-        delta = amountValue;
-      } else if (item.source === "transfer") {
-        delta = amountValue;
-      } else if (category?.category_type === "income") {
-        delta = amountValue;
-      } else if (category?.category_type === "expense") {
-        delta = -amountValue;
-      }
-      balance += delta;
+      balance += amountValue;
     });
     return balance;
   }, []);
@@ -498,6 +563,21 @@ export default function ContasPage() {
                         <span className="font-semibold text-[var(--ink)]">
                           {currencyFormatter.format(account.reconciled_balance)}
                         </span>
+                      </div>
+                    ) : null}
+                    {discrepancies[account.id] ? (
+                      <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+                        <span className="text-xs font-semibold text-amber-700">
+                          Divergencia: {currencyFormatter.format(discrepancies[account.id].difference)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickAdjust(account)}
+                          disabled={adjustingAccountId === account.id}
+                          className="rounded-lg border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 transition hover:bg-amber-200 disabled:opacity-50"
+                        >
+                          {adjustingAccountId === account.id ? "Ajustando..." : "Ajustar"}
+                        </button>
                       </div>
                     ) : null}
                   </div>
