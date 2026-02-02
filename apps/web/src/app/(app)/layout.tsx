@@ -16,6 +16,7 @@ const pathToView: Record<string, ActiveView> = {
   "/categorias": "categories",
   "/extrato": "statement",
   "/importacoes": "imports",
+  "/reconciliacao": "reconciliation",
   "/regras": "rules",
 };
 
@@ -27,6 +28,7 @@ const viewToPath: Record<ActiveView, string> = {
   categories: "/categorias",
   statement: "/extrato",
   imports: "/importacoes",
+  reconciliation: "/reconciliacao",
   rules: "/regras",
 };
 
