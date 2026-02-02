@@ -72,8 +72,12 @@ DECLARE
   v_tag_parcelado uuid := 'e0000000-0000-0000-0000-000000000003';
   v_tag_urgente   uuid := 'e0000000-0000-0000-0000-000000000004';
 
-  -- Import batch UUID
-  v_batch_nubank  uuid := 'b0000000-0000-0000-0000-000000000001';
+  -- Import batch UUIDs
+  v_batch_nubank    uuid := 'b0000000-0000-0000-0000-000000000001';
+  v_batch_nubank_2  uuid := 'b0000000-0000-0000-0000-000000000002';
+  v_batch_viacredi  uuid := 'b0000000-0000-0000-0000-000000000003';
+  v_batch_fl_nubank uuid := 'b0000000-0000-0000-0000-000000000004';
+  v_batch_fl_sicoob uuid := 'b0000000-0000-0000-0000-000000000005';
 
   -- Transaction UUIDs (para vincular tags)
   v_tx uuid;
@@ -163,7 +167,11 @@ BEGIN
   -- FAMILY + MEMBERSHIPS
   -- =========================================================================
 
-  INSERT INTO families (id, name, created_by) VALUES (v_family_id, 'Família Tirloni Pereira', v_felipe_uid);
+  INSERT INTO families (id, name, reconciliation_settings, created_by) VALUES (
+    v_family_id, 'Família Tirloni Pereira',
+    '{"amount_tolerance_abs": 1.0, "date_tolerance_days": 2, "description_matching": false}'::jsonb,
+    v_felipe_uid
+  );
   INSERT INTO memberships (family_id, user_id, role, created_by)
     VALUES (v_family_id, v_felipe_uid, 'owner', v_felipe_uid);
   INSERT INTO memberships (family_id, user_id, role, created_by)
@@ -173,8 +181,9 @@ BEGIN
   -- ACCOUNTS — Felipe
   -- =========================================================================
 
-  INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, is_reconcilable, created_by)
-    VALUES (v_acc_fe_nubank_cc, v_family_id, 'Nubank Felipe', 'checking', 2500.00, 'logo:nu-pagamentos-s-a', true, v_felipe_uid);
+  -- reconciled_balance sera atualizado no final via account_balance_at()
+  INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, is_reconcilable, ofx_bank_id, ofx_account_id, reconciled_until, reconciled_balance, created_by)
+    VALUES (v_acc_fe_nubank_cc, v_family_id, 'Nubank Felipe', 'checking', 2500.00, 'logo:nu-pagamentos-s-a', true, '0260', '123456-7', null, 0, v_felipe_uid);
 
   INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, created_by)
     VALUES (v_acc_fe_nubank_ct, v_family_id, 'Cartão Nubank Felipe', 'credit_card', 0.00, 'logo:nu-pagamentos-s-a', v_felipe_uid);
@@ -182,15 +191,17 @@ BEGIN
   INSERT INTO accounts (id, family_id, name, account_type, opening_balance, visibility, owner_user_id, icon_key, created_by)
     VALUES (v_acc_fe_carteira, v_family_id, 'Carteira Felipe', 'wallet', 200.00, 'private', v_felipe_uid, null, v_felipe_uid);
 
-  INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, is_reconcilable, created_by)
-    VALUES (v_acc_fe_viacredi, v_family_id, 'Viacredi Felipe', 'checking', 4200.00, 'logo:ailos', true, v_felipe_uid);
+  -- reconciled_balance sera atualizado no final via account_balance_at()
+  INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, is_reconcilable, ofx_bank_id, ofx_account_id, reconciled_until, reconciled_balance, created_by)
+    VALUES (v_acc_fe_viacredi, v_family_id, 'Viacredi Felipe', 'checking', 4200.00, 'logo:ailos', true, '0756', '98765-0', null, 0, v_felipe_uid);
 
   -- =========================================================================
   -- ACCOUNTS — Flavi
   -- =========================================================================
 
-  INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, is_reconcilable, created_by)
-    VALUES (v_acc_fl_nubank_cc, v_family_id, 'Nubank Flavi', 'checking', 1800.00, 'logo:nu-pagamentos-s-a', true, v_flavi_uid);
+  -- reconciled_balance sera atualizado no final via account_balance_at()
+  INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, is_reconcilable, ofx_bank_id, ofx_account_id, reconciled_until, reconciled_balance, created_by)
+    VALUES (v_acc_fl_nubank_cc, v_family_id, 'Nubank Flavi', 'checking', 1800.00, 'logo:nu-pagamentos-s-a', true, '0260', '654321-0', null, 0, v_flavi_uid);
 
   INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, created_by)
     VALUES (v_acc_fl_nubank_ct, v_family_id, 'Cartão Nubank Flavi', 'credit_card', 0.00, 'logo:nu-pagamentos-s-a', v_flavi_uid);
@@ -198,8 +209,9 @@ BEGIN
   INSERT INTO accounts (id, family_id, name, account_type, opening_balance, visibility, owner_user_id, icon_key, created_by)
     VALUES (v_acc_fl_carteira, v_family_id, 'Carteira Flavi', 'wallet', 150.00, 'private', v_flavi_uid, null, v_flavi_uid);
 
-  INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, is_reconcilable, created_by)
-    VALUES (v_acc_fl_sicoob, v_family_id, 'Sicoob Flavi', 'checking', 3500.00, 'logo:sicoob', true, v_flavi_uid);
+  -- reconciled_balance sera atualizado no final via account_balance_at()
+  INSERT INTO accounts (id, family_id, name, account_type, opening_balance, icon_key, is_reconcilable, ofx_bank_id, ofx_account_id, reconciled_until, reconciled_balance, created_by)
+    VALUES (v_acc_fl_sicoob, v_family_id, 'Sicoob Flavi', 'checking', 3500.00, 'logo:sicoob', true, '0756', '11223-4', null, 0, v_flavi_uid);
 
   -- =========================================================================
   -- CATEGORIES
@@ -258,12 +270,18 @@ BEGIN
     (v_tag_urgente,   v_family_id, 'Urgente',   v_felipe_uid);
 
   -- =========================================================================
-  -- IMPORT BATCH (simulando OFX Nubank Felipe)
+  -- IMPORT BATCHES
   -- =========================================================================
 
   INSERT INTO import_batches (id, family_id, source, raw_hash, status, metadata, created_by, processed_at) VALUES
     (v_batch_nubank, v_family_id, 'ofx', 'demo_nubank_felipe_ofx_hash_001', 'processed',
-     '{"bank":"Nubank","account":"CC Felipe","period":"ultimo_mes"}'::jsonb,
+     '{"bank":"Nubank","account":"CC Felipe","period":"2_meses_atras"}'::jsonb,
+     v_felipe_uid, now()),
+    (v_batch_nubank_2, v_family_id, 'ofx', 'demo_nubank_felipe_ofx_hash_002', 'processed',
+     '{"bank":"Nubank","account":"CC Felipe","period":"mes_passado"}'::jsonb,
+     v_felipe_uid, now()),
+    (v_batch_viacredi, v_family_id, 'ofx', 'demo_viacredi_felipe_ofx_hash_001', 'processed',
+     '{"bank":"Viacredi","account":"CC Felipe","period":"mes_passado"}'::jsonb,
      v_felipe_uid, now());
 
   -- =========================================================================
@@ -281,72 +299,72 @@ BEGIN
   -- Aluguel - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_aluguel, 2200.00, v_m2 + 10, 'Aluguel apartamento', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_aluguel, -2200.00, v_m2 + 10, 'Aluguel apartamento', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Condomínio - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_condominio, 650.00, v_m2 + 10, 'Condomínio', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_condominio, -650.00, v_m2 + 10, 'Condomínio', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Energia - Nubank Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_energia, 185.00, v_m2 + 15, 'CPFL Energia', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_energia, -185.00, v_m2 + 15, 'CPFL Energia', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Água - Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_cc, v_cat_agua, 95.00, v_m2 + 15, 'SABESP', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_cc, v_cat_agua, -95.00, v_m2 + 15, 'SABESP', 'manual', v_felipe_uid);
 
   -- Internet - Nubank Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_internet, 129.90, v_m2 + 12, 'Vivo Fibra', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_internet, -129.90, v_m2 + 12, 'Vivo Fibra', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Supermercado - Cartão Nubank Flavi
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, 892.45, v_m2 + 8, 'Extra Supermercados', 'manual', v_flavi_uid);
+    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, -892.45, v_m2 + 8, 'Extra Supermercados', 'manual', v_flavi_uid);
 
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, 345.80, v_m2 + 18, 'Pão de Açúcar', 'manual', v_flavi_uid);
+    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, -345.80, v_m2 + 18, 'Pão de Açúcar', 'manual', v_flavi_uid);
 
   -- Restaurante - Cartão Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_ct, v_cat_restaurante, 156.00, v_m2 + 14, 'Outback Steakhouse', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_ct, v_cat_restaurante, -156.00, v_m2 + 14, 'Outback Steakhouse', 'manual', v_felipe_uid);
 
   -- Delivery - Cartão Nubank Flavi
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_delivery, 67.90, v_m2 + 11, 'iFood - Sushi Leblon', 'manual', v_flavi_uid);
+    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_delivery, -67.90, v_m2 + 11, 'iFood - Sushi Leblon', 'manual', v_flavi_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_variavel);
 
   -- Combustível - Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_cc, v_cat_combustivel, 280.00, v_m2 + 7, 'Posto Shell BR-101', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_cc, v_cat_combustivel, -280.00, v_m2 + 7, 'Posto Shell BR-101', 'manual', v_felipe_uid);
 
   -- Uber - Cartão Nubank Flavi
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_uber, 34.50, v_m2 + 16, 'Uber - Centro → Casa', 'manual', v_flavi_uid);
+    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_uber, -34.50, v_m2 + 16, 'Uber - Centro → Casa', 'manual', v_flavi_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_variavel);
 
   -- Plano de Saúde - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_plano_saude, 890.00, v_m2 + 10, 'Unimed - Plano Familiar', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_plano_saude, -890.00, v_m2 + 10, 'Unimed - Plano Familiar', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Farmácia - Cartão Nubank Flavi
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fl_nubank_ct, v_cat_farmacia, 78.50, v_m2 + 20, 'Drogasil', 'manual', v_flavi_uid);
+    VALUES (v_acc_fl_nubank_ct, v_cat_farmacia, -78.50, v_m2 + 20, 'Drogasil', 'manual', v_flavi_uid);
 
   -- Streaming - Cartão Nubank Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_ct, v_cat_streaming, 55.90, v_m2 + 1, 'Netflix + Spotify', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_nubank_ct, v_cat_streaming, -55.90, v_m2 + 1, 'Netflix + Spotify', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Transferência: Viacredi Felipe -> Nubank Felipe
@@ -374,93 +392,93 @@ BEGIN
   -- Aluguel - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_aluguel, 2200.00, v_m1 + 10, 'Aluguel apartamento', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_aluguel, -2200.00, v_m1 + 10, 'Aluguel apartamento', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Condomínio - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_condominio, 650.00, v_m1 + 10, 'Condomínio', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_condominio, -650.00, v_m1 + 10, 'Condomínio', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Energia - Nubank Felipe
   v_tx := gen_random_uuid();
-  INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_energia, 210.00, v_m1 + 15, 'CPFL Energia', 'manual', v_felipe_uid);
+  INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, reconciliation_hint, created_by)
+    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_energia, -210.00, v_m1 + 15, 'CPFL Energia', 'manual', '{"match_description": "CPFL"}'::jsonb, v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Água - Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_cc, v_cat_agua, 88.00, v_m1 + 15, 'SABESP', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_cc, v_cat_agua, -88.00, v_m1 + 15, 'SABESP', 'manual', v_felipe_uid);
 
   -- Internet - Nubank Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_internet, 129.90, v_m1 + 12, 'Vivo Fibra', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_internet, -129.90, v_m1 + 12, 'Vivo Fibra', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Supermercado - Cartão Nubank Flavi
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, 1045.30, v_m1 + 7, 'Carrefour', 'manual', v_flavi_uid);
+    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, -1045.30, v_m1 + 7, 'Carrefour', 'manual', v_flavi_uid);
 
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, 278.60, v_m1 + 20, 'Hortifruti', 'manual', v_flavi_uid);
+    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, -278.60, v_m1 + 20, 'Hortifruti', 'manual', v_flavi_uid);
 
   -- Restaurante - Cartão Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_ct, v_cat_restaurante, 198.00, v_m1 + 13, 'Fogo de Chão', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_ct, v_cat_restaurante, -198.00, v_m1 + 13, 'Fogo de Chão', 'manual', v_felipe_uid);
 
   -- Restaurante - Carteira Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_carteira, v_cat_restaurante, 42.00, v_m1 + 22, 'Pastel da feira', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_carteira, v_cat_restaurante, -42.00, v_m1 + 22, 'Pastel da feira', 'manual', v_felipe_uid);
 
   -- Delivery - Cartão Nubank Flavi
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_delivery, 89.90, v_m1 + 9, 'iFood - Pizza Hut', 'manual', v_flavi_uid);
+    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_delivery, -89.90, v_m1 + 9, 'iFood - Pizza Hut', 'manual', v_flavi_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_variavel);
 
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_delivery, 52.40, v_m1 + 17, 'iFood - Burger King', 'manual', v_flavi_uid);
+    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_delivery, -52.40, v_m1 + 17, 'iFood - Burger King', 'manual', v_flavi_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_variavel);
 
   -- Combustível - Nubank Felipe
-  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_cc, v_cat_combustivel, 310.00, v_m1 + 6, 'Posto Ipiranga', 'manual', v_felipe_uid);
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, reconciliation_hint, created_by)
+    VALUES (v_acc_fe_nubank_cc, v_cat_combustivel, -310.00, v_m1 + 6, 'Posto Ipiranga', 'manual', '{"match_description": "POSTO", "match_amount_min": 300, "match_amount_max": 320}'::jsonb, v_felipe_uid);
 
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_cc, v_cat_combustivel, 260.00, v_m1 + 21, 'Posto Shell', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_cc, v_cat_combustivel, -260.00, v_m1 + 21, 'Posto Shell', 'manual', v_felipe_uid);
 
   -- Uber - Cartão Nubank Flavi
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_uber, 28.70, v_m1 + 11, 'Uber - Shopping → Casa', 'manual', v_flavi_uid);
+    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_uber, -28.70, v_m1 + 11, 'Uber - Shopping → Casa', 'manual', v_flavi_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_variavel);
 
   -- Plano de Saúde - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_plano_saude, 890.00, v_m1 + 10, 'Unimed - Plano Familiar', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_plano_saude, -890.00, v_m1 + 10, 'Unimed - Plano Familiar', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Farmácia - Cartão Nubank Flavi
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fl_nubank_ct, v_cat_farmacia, 125.80, v_m1 + 19, 'Droga Raia', 'manual', v_flavi_uid);
+    VALUES (v_acc_fl_nubank_ct, v_cat_farmacia, -125.80, v_m1 + 19, 'Droga Raia', 'manual', v_flavi_uid);
 
   -- Streaming - Cartão Nubank Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_ct, v_cat_streaming, 55.90, v_m1 + 1, 'Netflix + Spotify', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_nubank_ct, v_cat_streaming, -55.90, v_m1 + 1, 'Netflix + Spotify', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Cinema - Cartão Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_ct, v_cat_cinema, 96.00, v_m1 + 16, 'Cinemark - 2 ingressos + pipoca', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_ct, v_cat_cinema, -96.00, v_m1 + 16, 'Cinemark - 2 ingressos + pipoca', 'manual', v_felipe_uid);
 
   -- Estacionamento - Carteira Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_carteira, v_cat_estacionamento, 25.00, v_m1 + 16, 'Estacionamento shopping', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_carteira, v_cat_estacionamento, -25.00, v_m1 + 16, 'Estacionamento shopping', 'manual', v_felipe_uid);
 
   -- Transferência: Viacredi Felipe -> Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
@@ -495,100 +513,301 @@ BEGIN
   -- Aluguel - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_aluguel, 2200.00, v_m0 + 10, 'Aluguel apartamento', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_aluguel, -2200.00, v_m0 + 10, 'Aluguel apartamento', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Condomínio - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_condominio, 650.00, v_m0 + 10, 'Condomínio', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_condominio, -650.00, v_m0 + 10, 'Condomínio', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Energia - Nubank Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_energia, 195.00, v_m0 + 15, 'CPFL Energia', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_energia, -195.00, v_m0 + 15, 'CPFL Energia', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Internet - Nubank Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_internet, 129.90, v_m0 + 12, 'Vivo Fibra', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_nubank_cc, v_cat_internet, -129.90, v_m0 + 12, 'Vivo Fibra', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Supermercado - Cartão Nubank Flavi
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, 756.20, v_m0 + 4, 'Atacadão', 'manual', v_flavi_uid);
+    VALUES (v_acc_fl_nubank_ct, v_cat_supermercado, -756.20, v_m0 + 4, 'Atacadão', 'manual', v_flavi_uid);
 
   -- Restaurante - Cartão Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_ct, v_cat_restaurante, 142.00, v_m0 + 8, 'Madero', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_ct, v_cat_restaurante, -142.00, v_m0 + 8, 'Madero', 'manual', v_felipe_uid);
 
   -- Delivery - Cartão Nubank Flavi
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_delivery, 73.50, v_m0 + 6, 'iFood - McDonald''s', 'manual', v_flavi_uid);
+    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_delivery, -73.50, v_m0 + 6, 'iFood - McDonald''s', 'manual', v_flavi_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_variavel);
 
   -- Combustível - Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_cc, v_cat_combustivel, 295.00, v_m0 + 3, 'Posto BR', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_cc, v_cat_combustivel, -295.00, v_m0 + 3, 'Posto BR', 'manual', v_felipe_uid);
 
   -- Plano de Saúde - Viacredi Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_viacredi, v_cat_plano_saude, 890.00, v_m0 + 10, 'Unimed - Plano Familiar', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_viacredi, v_cat_plano_saude, -890.00, v_m0 + 10, 'Unimed - Plano Familiar', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Streaming - Cartão Nubank Felipe
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fe_nubank_ct, v_cat_streaming, 55.90, v_m0 + 1, 'Netflix + Spotify', 'manual', v_felipe_uid);
+    VALUES (v_tx, v_acc_fe_nubank_ct, v_cat_streaming, -55.90, v_m0 + 1, 'Netflix + Spotify', 'manual', v_felipe_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_fixo);
 
   -- Vestuário - Cartão Nubank Flavi
   v_tx := gen_random_uuid();
   INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_vestuario, 389.90, v_m0 + 9, 'Renner', 'manual', v_flavi_uid);
+    VALUES (v_tx, v_acc_fl_nubank_ct, v_cat_vestuario, -389.90, v_m0 + 9, 'Renner', 'manual', v_flavi_uid);
   INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (v_tx, v_tag_parcelado);
 
   -- Cursos - Cartão Nubank Felipe
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fe_nubank_ct, v_cat_cursos, 197.00, v_m0 + 2, 'Alura - Assinatura mensal', 'manual', v_felipe_uid);
+    VALUES (v_acc_fe_nubank_ct, v_cat_cursos, -197.00, v_m0 + 2, 'Alura - Assinatura mensal', 'manual', v_felipe_uid);
 
   -- Uber - Cartão Nubank Flavi
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
-    VALUES (v_acc_fl_nubank_ct, v_cat_uber, 22.30, v_m0 + 7, 'Uber - Trabalho → Casa', 'manual', v_flavi_uid);
+    VALUES (v_acc_fl_nubank_ct, v_cat_uber, -22.30, v_m0 + 7, 'Uber - Trabalho → Casa', 'manual', v_flavi_uid);
 
   -- Rendimentos - Sicoob Flavi
   INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
     VALUES (v_acc_fl_sicoob, v_cat_rendimentos, 105.20, v_m0 + 1, 'Rendimento aplicação', 'manual', v_flavi_uid);
 
   -- =========================================================================
-  -- OFX-IMPORTED TRANSACTIONS (Nubank Felipe, mês passado)
+  -- OFX-IMPORTED TRANSACTIONS (Nubank Felipe, 2 meses atrás)
   -- =========================================================================
 
-  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, source_hash, external_id, import_batch_id, created_by)
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, created_by)
   VALUES
-    (v_acc_fe_nubank_cc, v_cat_supermercado, 234.56, v_m1 + 8,  'PAG*JoseDaSilva',  'ofx', md5('ofx_nu_001'), 'FITID20250101001', v_batch_nubank, v_felipe_uid),
-    (v_acc_fe_nubank_cc, v_cat_delivery,     45.90,  v_m1 + 10, 'IFOOD *IFOOD',      'ofx', md5('ofx_nu_002'), 'FITID20250101002', v_batch_nubank, v_felipe_uid),
-    (v_acc_fe_nubank_cc, v_cat_uber,         31.20,  v_m1 + 12, 'UBER *UBER *TRIP',  'ofx', md5('ofx_nu_003'), 'FITID20250101003', v_batch_nubank, v_felipe_uid),
-    (v_acc_fe_nubank_cc, v_cat_farmacia,     67.80,  v_m1 + 14, 'DROGASIL',          'ofx', md5('ofx_nu_004'), 'FITID20250101004', v_batch_nubank, v_felipe_uid),
-    (v_acc_fe_nubank_cc, v_cat_restaurante,  89.90,  v_m1 + 16, 'REST MADALOSSO',    'ofx', md5('ofx_nu_005'), 'FITID20250101005', v_batch_nubank, v_felipe_uid);
+    (v_acc_fe_nubank_cc, v_cat_supermercado, -234.56, v_m2 + 8,  'PAG*JoseDaSilva',  'PAG*JoseDaSilva',  'ofx', md5('ofx_nu_001'), 'FITID20250101001', v_batch_nubank, v_felipe_uid),
+    (v_acc_fe_nubank_cc, v_cat_delivery,     -45.90,  v_m2 + 10, 'IFOOD *IFOOD',      'IFOOD *IFOOD',      'ofx', md5('ofx_nu_002'), 'FITID20250101002', v_batch_nubank, v_felipe_uid),
+    (v_acc_fe_nubank_cc, v_cat_uber,         -31.20,  v_m2 + 12, 'UBER *UBER *TRIP',  'UBER *UBER *TRIP',  'ofx', md5('ofx_nu_003'), 'FITID20250101003', v_batch_nubank, v_felipe_uid),
+    (v_acc_fe_nubank_cc, v_cat_farmacia,     -67.80,  v_m2 + 14, 'DROGASIL',          'DROGASIL',          'ofx', md5('ofx_nu_004'), 'FITID20250101004', v_batch_nubank, v_felipe_uid),
+    (v_acc_fe_nubank_cc, v_cat_restaurante,  -89.90,  v_m2 + 16, 'REST MADALOSSO',    'REST MADALOSSO',    'ofx', md5('ofx_nu_005'), 'FITID20250101005', v_batch_nubank, v_felipe_uid),
+    -- Near-matches para testar "Encontrar OFX" na reconciliação
+    -- Combustível manual=280.00 em v_m2+7 → OFX -279.50 em v_m2+8 (valor -0.50, data +1)
+    (v_acc_fe_nubank_cc, v_cat_combustivel,  -279.50,  v_m2 + 8,  'POSTO SHELL BR101', 'POSTO SHELL BR101', 'ofx', md5('ofx_nu_006'), 'FITID20250101006', v_batch_nubank, v_felipe_uid),
+    -- Internet manual=129.90 em v_m2+12 → OFX -129.90 em v_m2+13 (mesmo valor, data +1)
+    (v_acc_fe_nubank_cc, v_cat_internet,     -129.90,  v_m2 + 13, 'VIVO FIBRA INTERNET', 'VIVO FIBRA INTERNET', 'ofx', md5('ofx_nu_007'), 'FITID20250101007', v_batch_nubank, v_felipe_uid),
+    -- Energia manual=185.00 em v_m2+15 → OFX -185.50 em v_m2+16 (valor +0.50, data +1)
+    (v_acc_fe_nubank_cc, v_cat_energia,      -185.50,  v_m2 + 16, 'CPFL ENERGIA ELETRICA', 'CPFL ENERGIA ELETRICA', 'ofx', md5('ofx_nu_008'), 'FITID20250101008', v_batch_nubank, v_felipe_uid);
+
+  -- =========================================================================
+  -- OFX-IMPORTED TRANSACTIONS (Nubank Felipe, mês passado)
+  -- Espelham o arquivo nubank_felipe.ofx
+  -- =========================================================================
+
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, created_by)
+  VALUES
+    -- Pareia com manual "Posto Ipiranga" 310.00
+    (v_acc_fe_nubank_cc, v_cat_combustivel,  -310.00,  v_m1 + 6,  'POSTO IPIRANGA COMBUSTIVEL',  'POSTO IPIRANGA COMBUSTIVEL',  'ofx', md5('ofx_nu2_001'), 'NU20250106001', v_batch_nubank_2, true, v_felipe_uid),
+    -- Pareia com manual "Vivo Fibra" 129.90
+    (v_acc_fe_nubank_cc, v_cat_internet,     -129.90,  v_m1 + 12, 'VIVO FIBRA INTERNET',         'VIVO FIBRA INTERNET',         'ofx', md5('ofx_nu2_002'), 'NU20250112001', v_batch_nubank_2, true, v_felipe_uid),
+    -- Pareia com manual "Projeto freelance" 1500.00
+    (v_acc_fe_nubank_cc, v_cat_freelance,    1500.00, v_m1 + 15, 'TED RECEBIDO - PROJETO FREELANCE', 'TED RECEBIDO - PROJETO FREELANCE', 'ofx', md5('ofx_nu2_003'), 'NU20250115001', v_batch_nubank_2, false, v_felipe_uid),
+    -- Pareia com manual "CPFL Energia" 210.00
+    (v_acc_fe_nubank_cc, v_cat_energia,      -210.00,  v_m1 + 15, 'CPFL ENERGIA ELETRICA',        'CPFL ENERGIA ELETRICA',        'ofx', md5('ofx_nu2_004'), 'NU20250115002', v_batch_nubank_2, true, v_felipe_uid),
+    -- Pareia com manual "SABESP" 88.00
+    (v_acc_fe_nubank_cc, v_cat_agua,         -88.00,   v_m1 + 15, 'SABESP SANEAMENTO',            'SABESP SANEAMENTO',            'ofx', md5('ofx_nu2_005'), 'NU20250115003', v_batch_nubank_2, true, v_felipe_uid),
+    -- SEM CATEGORIA — PIX recebido (crédito = positivo)
+    (v_acc_fe_nubank_cc, null,               500.00,  v_m1 + 18, 'PIX RECEBIDO JOAO SILVA',      'PIX RECEBIDO JOAO SILVA',      'ofx', md5('ofx_nu2_006'), 'NU20250118001', v_batch_nubank_2, false, v_felipe_uid),
+    -- SEM CATEGORIA — Boleto seguro (débito = negativo)
+    (v_acc_fe_nubank_cc, null,               -145.00,  v_m1 + 20, 'PAGTO BOLETO SEGURO RESIDENCIAL', 'PAGTO BOLETO SEGURO RESIDENCIAL', 'ofx', md5('ofx_nu2_007'), 'NU20250120001', v_batch_nubank_2, false, v_felipe_uid),
+    -- Pareia com manual "Posto Shell" 260.00
+    (v_acc_fe_nubank_cc, v_cat_combustivel,  -260.00,  v_m1 + 21, 'POSTO SHELL COMBUSTIVEL',      'POSTO SHELL COMBUSTIVEL',      'ofx', md5('ofx_nu2_008'), 'NU20250121001', v_batch_nubank_2, true, v_felipe_uid);
+
+  -- =========================================================================
+  -- OFX-IMPORTED TRANSACTIONS (Viacredi Felipe, mês passado)
+  -- Espelham o arquivo viacredi_felipe.ofx
+  -- =========================================================================
+
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, created_by)
+  VALUES
+    -- Pareia com manual "Salário Felipe" 8500.00
+    (v_acc_fe_viacredi, v_cat_salario,       8500.00, v_m1 + 5,  'SALARIO EMPRESA LTDA',         'SALARIO EMPRESA LTDA',         'ofx', md5('ofx_vc_001'), 'VC20250105001', v_batch_viacredi, true, v_felipe_uid),
+    -- Pareia com manual "Aluguel apartamento" 2200.00
+    (v_acc_fe_viacredi, v_cat_aluguel,       -2200.00, v_m1 + 10, 'ALUGUEL IMOVEL RESIDENCIAL',   'ALUGUEL IMOVEL RESIDENCIAL',   'ofx', md5('ofx_vc_002'), 'VC20250110001', v_batch_viacredi, true, v_felipe_uid),
+    -- Pareia com manual "Condomínio" 650.00
+    (v_acc_fe_viacredi, v_cat_condominio,    -650.00,  v_m1 + 10, 'CONDOMINIO RESIDENCIAL',       'CONDOMINIO RESIDENCIAL',       'ofx', md5('ofx_vc_003'), 'VC20250110002', v_batch_viacredi, true, v_felipe_uid),
+    -- Pareia com manual "Unimed - Plano Familiar" 890.00
+    (v_acc_fe_viacredi, v_cat_plano_saude,   -890.00,  v_m1 + 10, 'UNIMED PLANO SAUDE',           'UNIMED PLANO SAUDE',           'ofx', md5('ofx_vc_004'), 'VC20250110003', v_batch_viacredi, true, v_felipe_uid),
+    -- SEM CATEGORIA — Taxa serviço (débito = negativo)
+    (v_acc_fe_viacredi, null,                -12.50,   v_m1 + 25, 'TAXA SERVICO BANCARIO',        'TAXA SERVICO BANCARIO',        'ofx', md5('ofx_vc_005'), 'VC20250125001', v_batch_viacredi, false, v_felipe_uid),
+    -- SEM CATEGORIA — IOF (débito = negativo)
+    (v_acc_fe_viacredi, null,                -3.45,    v_m1 + 28, 'IOF OPERACAO CREDITO',          'IOF OPERACAO CREDITO',          'ofx', md5('ofx_vc_006'), 'VC20250128001', v_batch_viacredi, false, v_felipe_uid);
+
+  -- =========================================================================
+  -- IMPORT BATCHES — Flavi
+  -- =========================================================================
+
+  INSERT INTO import_batches (id, family_id, source, raw_hash, status, metadata, created_by, processed_at) VALUES
+    (v_batch_fl_nubank, v_family_id, 'ofx', 'demo_nubank_flavi_ofx_hash_001', 'processed',
+     '{"bank":"Nubank","account":"CC Flavi","period":"mes_passado"}'::jsonb,
+     v_flavi_uid, now()),
+    (v_batch_fl_sicoob, v_family_id, 'ofx', 'demo_sicoob_flavi_ofx_hash_001', 'processed',
+     '{"bank":"Sicoob","account":"CC Flavi","period":"mes_passado"}'::jsonb,
+     v_flavi_uid, now());
+
+  -- =========================================================================
+  -- OFX-IMPORTED TRANSACTIONS (Nubank Flavi, mês passado)
+  -- =========================================================================
+
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, created_by)
+  VALUES
+    -- Pareia com manual "Transferência do Sicoob" 500.00 (crédito = positivo)
+    (v_acc_fl_nubank_cc, v_cat_transferencia, 500.00, v_m1 + 7, 'TED RECEBIDO SICOOB', 'TED RECEBIDO SICOOB', 'ofx', md5('ofx_fln_001'), 'FNU20250107001', v_batch_fl_nubank, false, v_flavi_uid),
+    -- SEM par manual — PIX avulso que Flavi não registrou (crédito = positivo)
+    (v_acc_fl_nubank_cc, null,               85.00,  v_m1 + 14, 'PIX RECEBIDO MAE FLAVI',  'PIX RECEBIDO MAE FLAVI',  'ofx', md5('ofx_fln_002'), 'FNU20250114001', v_batch_fl_nubank, false, v_flavi_uid),
+    -- SEM CATEGORIA — Debito automático (débito = negativo)
+    (v_acc_fl_nubank_cc, null,               -42.90,  v_m1 + 18, 'DEB AUT CLARO CELULAR',   'DEB AUT CLARO CELULAR',   'ofx', md5('ofx_fln_003'), 'FNU20250118001', v_batch_fl_nubank, false, v_flavi_uid);
+
+  -- =========================================================================
+  -- OFX-IMPORTED TRANSACTIONS (Sicoob Flavi, mês passado)
+  -- =========================================================================
+
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, created_by)
+  VALUES
+    -- Pareia com manual "Salário Flavi" 4200.00 (crédito = positivo)
+    (v_acc_fl_sicoob, v_cat_salario,        4200.00, v_m1 + 5,  'SALARIO EMPRESA FLAVI',    'SALARIO EMPRESA FLAVI',    'ofx', md5('ofx_fls_001'), 'FSC20250105001', v_batch_fl_sicoob, true, v_flavi_uid),
+    -- Pareia com manual "Transferência para Nubank" -500.00 (débito = negativo)
+    (v_acc_fl_sicoob, v_cat_transferencia,  -500.00, v_m1 + 7,  'TED ENVIADA NUBANK',       'TED ENVIADA NUBANK',       'ofx', md5('ofx_fls_002'), 'FSC20250107001', v_batch_fl_sicoob, false, v_flavi_uid),
+    -- SEM par manual — rendimento que Flavi não registrou (crédito = positivo)
+    (v_acc_fl_sicoob, v_cat_rendimentos,    78.35,   v_m1 + 28, 'RENDIMENTO POUPANCA',      'RENDIMENTO POUPANCA',      'ofx', md5('ofx_fls_003'), 'FSC20250128001', v_batch_fl_sicoob, true, v_flavi_uid);
+
+  -- =========================================================================
+  -- CROSS-ACCOUNT TEST: manuais na conta errada + near-matches
+  -- =========================================================================
+
+  -- Cenário 1: Flavi registrou "Farmácia" no Nubank (R$125.80, dia m1+19)
+  --            mas pagou de fato pelo Sicoob → OFX aparece no Sicoob (R$125.80, dia m1+19)
+  --            Cross-account match exato (mesmo valor, mesma data, conta diferente)
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
+    VALUES (v_acc_fl_nubank_cc, v_cat_farmacia, -125.80, v_m1 + 19, 'Droga Raia', 'manual', v_flavi_uid);
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, created_by)
+    VALUES (v_acc_fl_sicoob, v_cat_farmacia, -125.80, v_m1 + 19, 'DROGA RAIA FARMACIAS', 'DROGA RAIA FARMACIAS', 'ofx', md5('ofx_fls_004'), 'FSC20250119001', v_batch_fl_sicoob, true, v_flavi_uid);
+
+  -- Cenário 2: Flavi registrou "Mercado" no Sicoob (R$350.00, dia m1+12)
+  --            valor arredondado — OFX no Sicoob mostra R$347.85 no dia m1+12
+  --            Near-match: valor -R$2.15, mesma data
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
+    VALUES (v_acc_fl_sicoob, v_cat_supermercado, -350.00, v_m1 + 12, 'Supermercado Condor', 'manual', v_flavi_uid);
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, created_by)
+    VALUES (v_acc_fl_sicoob, v_cat_supermercado, -347.85, v_m1 + 12, 'CONDOR SUPER CENTER', 'CONDOR SUPER CENTER', 'ofx', md5('ofx_fls_005'), 'FSC20250112001', v_batch_fl_sicoob, true, v_flavi_uid);
+
+  -- Cenário 3: Flavi registrou "PIX" no Sicoob (R$200.00, dia m1+10)
+  --            mas o PIX caiu no Nubank → OFX no Nubank (R$200.00, dia m1+11, +1 dia)
+  --            Cross-account + data diferente
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
+    VALUES (v_acc_fl_sicoob, v_cat_rendimentos, 200.00, v_m1 + 10, 'PIX recebido prima', 'manual', v_flavi_uid);
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, created_by)
+    VALUES (v_acc_fl_nubank_cc, null, 200.00, v_m1 + 11, 'PIX RECEBIDO PRIMA FLAVI', 'PIX RECEBIDO PRIMA FLAVI', 'ofx', md5('ofx_fln_004'), 'FNU20250111001', v_batch_fl_nubank, false, v_flavi_uid);  -- crédito = positivo
+
+  -- Cenário 4: Flavi registrou "Uber" no Nubank (R$35.00, dia m1+15)
+  --            OFX no Nubank mostra R$37.50 no dia m1+16 (valor +R$2.50, data +1)
+  --            Near-match: valor e data diferentes na mesma conta
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, source, created_by)
+    VALUES (v_acc_fl_nubank_cc, v_cat_uber, -35.00, v_m1 + 15, 'Uber - Mercado → Casa', 'manual', v_flavi_uid);
+  INSERT INTO transactions (account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, created_by)
+    VALUES (v_acc_fl_nubank_cc, v_cat_uber, -37.50, v_m1 + 16, 'UBER *UBER *TRIP', 'UBER *UBER *TRIP', 'ofx', md5('ofx_fln_005'), 'FNU20250116001', v_batch_fl_nubank, true, v_flavi_uid);
 
   -- =========================================================================
   -- RULES (auto-categorização)
   -- =========================================================================
 
-  INSERT INTO rules (family_id, name, match, action, created_by) VALUES
+  INSERT INTO rules (family_id, name, match, action, priority, created_by) VALUES
     (v_family_id, 'Auto-categorizar iFood',
      '{"description_contains":"ifood"}'::jsonb,
      jsonb_build_object('set_category_id', v_cat_delivery::text),
-     v_felipe_uid),
+     10, v_felipe_uid),
     (v_family_id, 'Auto-categorizar Uber',
      '{"description_contains":"uber"}'::jsonb,
      jsonb_build_object('set_category_id', v_cat_uber::text),
-     v_felipe_uid);
+     10, v_felipe_uid),
+    (v_family_id, 'CPFL / Energia',
+     '{"description_regex":"cpfl|energia"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_energia::text),
+     20, v_felipe_uid),
+    (v_family_id, 'SABESP / Água',
+     '{"description_regex":"sabesp|agua"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_agua::text),
+     20, v_felipe_uid),
+    (v_family_id, 'Vivo / Internet',
+     '{"description_regex":"vivo|fibra"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_internet::text),
+     20, v_felipe_uid),
+    (v_family_id, 'Posto / Combustível',
+     '{"description_regex":"posto|combustivel"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_combustivel::text),
+     20, v_felipe_uid),
+    (v_family_id, 'Unimed / Plano de Saúde',
+     '{"description_contains":"unimed"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_plano_saude::text),
+     20, v_felipe_uid),
+    (v_family_id, 'Netflix / Spotify / Streaming',
+     '{"description_regex":"netflix|spotify"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_streaming::text),
+     20, v_felipe_uid),
+    (v_family_id, 'Drogasil / Droga Raia / Farmácia',
+     '{"description_regex":"drogasil|droga raia|farmacia"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_farmacia::text),
+     20, v_felipe_uid),
+    (v_family_id, 'Aluguel',
+     '{"description_contains":"aluguel"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_aluguel::text),
+     30, v_felipe_uid),
+    (v_family_id, 'Condomínio',
+     '{"description_contains":"condominio"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_condominio::text),
+     30, v_felipe_uid),
+    (v_family_id, 'Supermercado / Atacadão / Carrefour',
+     '{"description_regex":"supermercado|atacadao|carrefour"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_supermercado::text),
+     30, v_felipe_uid),
+    (v_family_id, 'Salário',
+     '{"description_contains":"salario"}'::jsonb,
+     jsonb_build_object('set_category_id', v_cat_salario::text),
+     30, v_felipe_uid);
+
+  -- =========================================================================
+  -- ATUALIZAR reconciled_balance = saldo do BANCO (sem manuais duplicados)
+  -- O banco vê: opening_balance + OFX + transfers + adjustments (não manuais)
+  -- Isso é o saldo-alvo: após reconciliar (deletar manuais), o sistema converge
+  -- =========================================================================
+
+  -- reconciled_until = data do ultimo OFX importado por conta
+  UPDATE accounts a SET reconciled_until = (
+    SELECT max(t.posted_at)
+    FROM transactions t
+    WHERE t.account_id = a.id AND t.source = 'ofx'
+  ) WHERE a.is_reconcilable;
+
+  -- reconciled_balance = saldo esperado apos reconciliar (deletar manuais duplicados)
+  -- Inclui: tudo exceto manuais que caem no periodo com cobertura OFX
+  -- Manuais anteriores ao primeiro OFX nao sao duplicatas, entram no saldo
+  UPDATE accounts a SET reconciled_balance = (
+    SELECT coalesce(a.opening_balance, 0) + coalesce((
+      SELECT sum(t.amount)
+      FROM transactions t
+      WHERE t.account_id = a.id
+        AND t.posted_at <= a.reconciled_until
+        AND NOT (
+          t.source = 'manual'
+          AND t.posted_at >= coalesce((
+            SELECT min(ox.posted_at) FROM transactions ox
+            WHERE ox.account_id = a.id AND ox.source = 'ofx'
+          ), a.reconciled_until)
+        )
+    ), 0)
+  ) WHERE a.is_reconcilable AND a.reconciled_until IS NOT NULL;
 
   RAISE NOTICE '✓ Demo data inserted successfully!';
 END $$;
