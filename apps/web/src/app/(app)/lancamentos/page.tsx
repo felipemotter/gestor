@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { useApp, type Category, type EditTransaction } from "@/contexts/AppContext";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -65,12 +66,15 @@ export default function LancamentosPage() {
     openTransactionModal,
   } = useApp();
 
+  const searchParams = useSearchParams();
+  const initialUncategorized = searchParams.get("filter") === "uncategorized";
+
   // Filter state
   const [filterAccountIds, setFilterAccountIds] = useState<string[]>([]);
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
   const [typeFilters, setTypeFilters] = useState<string[]>([...typeFilterAll]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterUncategorized, setFilterUncategorized] = useState(false);
+  const [filterUncategorized, setFilterUncategorized] = useState(initialUncategorized);
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
   const [pageSize, setPageSize] = useState(50);
@@ -138,9 +142,9 @@ export default function LancamentosPage() {
   // Month range
   const monthRange = useMemo(() => getMonthRange(activeMonth), [activeMonth]);
 
-  // Effective date range
-  const effectiveStartDate = filterStartDate || monthRange.startDate;
-  const effectiveEndDate = filterEndDate || monthRange.endDate;
+  // Effective date range — when uncategorized filter is active without explicit dates, show all periods
+  const effectiveStartDate = filterStartDate || (filterUncategorized ? "" : monthRange.startDate);
+  const effectiveEndDate = filterEndDate || (filterUncategorized ? "" : monthRange.endDate);
 
   // Load transactions
   useEffect(() => {
@@ -1032,12 +1036,8 @@ export default function LancamentosPage() {
                         const displayValue = isNumeric ? Math.abs(rawValue) : rawValue;
                         const formattedValue = isNumeric ? currencyFormatter.format(displayValue) : tx.amount;
                         const categoryType = tx.category?.category_type;
-                        const sign = isTransferRow || isAdjustRow
-                          ? rawValue < 0 ? "-" : "+"
-                          : categoryType === "income" ? "+" : categoryType === "expense" ? "-" : "";
-                        const valueTone = isTransferRow || isAdjustRow
-                          ? rawValue < 0 ? "text-rose-600" : "text-emerald-600"
-                          : categoryType === "expense" ? "text-rose-600" : categoryType === "income" ? "text-emerald-600" : "text-[var(--ink)]";
+                        const sign = rawValue < 0 ? "-" : rawValue > 0 ? "+" : "";
+                        const valueTone = rawValue < 0 ? "text-rose-600" : rawValue > 0 ? "text-emerald-600" : "text-[var(--ink)]";
                         const isUncategorized = !tx.category?.id && !isTransferRow && !isAdjustRow;
                         const categoryLabel = tx.category?.id
                           ? getCategoryDisplayLabel(tx.category.id, tx.category?.name)
@@ -1149,10 +1149,12 @@ export default function LancamentosPage() {
                     const categoryType = tx.category?.category_type;
                     const sign = isTransferRow || isAdjustRow
                       ? rawValue < 0 ? "-" : "+"
-                      : categoryType === "income" ? "+" : categoryType === "expense" ? "-" : "";
+                      : categoryType === "income" ? "+" : categoryType === "expense" ? "-"
+                      : rawValue < 0 ? "-" : rawValue > 0 ? "+" : "";
                     const valueTone = isTransferRow || isAdjustRow
                       ? rawValue < 0 ? "text-rose-600" : "text-emerald-600"
-                      : categoryType === "expense" ? "text-rose-600" : categoryType === "income" ? "text-emerald-600" : "text-[var(--ink)]";
+                      : categoryType === "expense" ? "text-rose-600" : categoryType === "income" ? "text-emerald-600"
+                      : rawValue < 0 ? "text-rose-600" : rawValue > 0 ? "text-emerald-600" : "text-[var(--ink)]";
                     const isUncategorized = !tx.category?.id && !isTransferRow && !isAdjustRow;
                     const categoryLabel = tx.category?.id
                       ? getCategoryDisplayLabel(tx.category.id, tx.category?.name)

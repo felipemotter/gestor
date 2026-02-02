@@ -191,17 +191,8 @@ export default function ExtratoPage() {
         const amountValue = Number(item.amount);
         const isNumeric = Number.isFinite(amountValue);
         const source = item.source;
-        const categoryType = item.category?.category_type ?? null;
 
-        const delta = !isNumeric
-          ? 0
-          : source === "transfer" || source === "adjustment"
-            ? amountValue
-            : categoryType === "income"
-              ? amountValue
-              : categoryType === "expense"
-                ? -amountValue
-                : 0;
+        const delta = isNumeric ? amountValue : 0;
 
         running += delta;
 

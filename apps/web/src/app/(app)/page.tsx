@@ -55,6 +55,10 @@ export default function DashboardPage() {
     dataRefreshCounter,
   } = useApp();
 
+  // Alert counts
+  const [uncategorizedOfxCount, setUncategorizedOfxCount] = useState(0);
+  const [unreconciledManualCount, setUnreconciledManualCount] = useState(0);
+
   // Dashboard-specific state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
@@ -128,7 +132,7 @@ export default function DashboardPage() {
     const loadSummary = async () => {
       const { data, error } = await supabase
         .from("transactions")
-        .select("amount, source, category:categories(category_type)")
+        .select("amount, source")
         .in("account_id", accounts.map((a) => a.id))
         .gte("posted_at", monthRange.startDate)
         .lte("posted_at", monthRange.endDate);
@@ -145,20 +149,12 @@ export default function DashboardPage() {
         const amountValue = Number(item.amount);
         if (!Number.isFinite(amountValue)) return;
 
-        if (item.source === "adjustment") {
-          if (amountValue >= 0) {
-            income += amountValue;
-          } else {
-            expense += Math.abs(amountValue);
-          }
-          return;
-        }
+        if (item.source === "transfer") return;
 
-        const category = item.category as unknown as { category_type: string } | null;
-        if (category?.category_type === "income") {
+        if (amountValue > 0) {
           income += amountValue;
-        } else if (category?.category_type === "expense") {
-          expense += amountValue;
+        } else if (amountValue < 0) {
+          expense += Math.abs(amountValue);
         }
       });
 
@@ -167,6 +163,28 @@ export default function DashboardPage() {
 
     loadSummary();
   }, [activeFamilyId, session?.access_token, accounts, activeMonth, dataRefreshCounter]);
+
+  // Load alert counts (uncategorized OFX + unreconciled manuals)
+  useEffect(() => {
+    if (!activeFamilyId || !session?.access_token) {
+      /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset on missing data */
+      setUncategorizedOfxCount(0);
+      setUnreconciledManualCount(0);
+      /* eslint-enable react-hooks/set-state-in-effect */
+      return;
+    }
+
+    const loadAlerts = async () => {
+      const [ofxRes, manualRes] = await Promise.all([
+        supabase.rpc("uncategorized_ofx_count", { family_uuid: activeFamilyId }),
+        supabase.rpc("unreconciled_manual_count", { family_uuid: activeFamilyId }),
+      ]);
+      setUncategorizedOfxCount(Number(ofxRes.data) || 0);
+      setUnreconciledManualCount(Number(manualRes.data) || 0);
+    };
+
+    loadAlerts();
+  }, [activeFamilyId, session?.access_token, dataRefreshCounter]);
 
   // Load dashboard analytics
   useEffect(() => {
@@ -285,18 +303,18 @@ export default function DashboardPage() {
             id: category.id,
             label,
             color,
-            value: (incomeMap.get(category.id)?.value ?? 0) + amountValue,
+            value: (incomeMap.get(category.id)?.value ?? 0) + Math.abs(amountValue),
           });
-          addDaily(dayKey, amountValue);
         } else if (category.category_type === "expense") {
           expenseMap.set(category.id, {
             id: category.id,
             label,
             color,
-            value: (expenseMap.get(category.id)?.value ?? 0) + amountValue,
+            value: (expenseMap.get(category.id)?.value ?? 0) + Math.abs(amountValue),
           });
-          addDaily(dayKey, -amountValue);
         }
+
+        addDaily(dayKey, amountValue);
       });
 
       const expenseSegments = buildDonutSegments(Array.from(expenseMap.values()));
@@ -425,6 +443,39 @@ export default function DashboardPage() {
           </div>
         </section>
 
+        {/* Alerts */}
+        {(uncategorizedOfxCount > 0 || unreconciledManualCount > 0) ? (
+          <section className="flex flex-col gap-3">
+            {uncategorizedOfxCount > 0 ? (
+              <Link
+                href="/lancamentos?filter=uncategorized"
+                className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 transition hover:border-amber-300"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 7h7l5 5-7 7-5-5V7z" />
+                  <circle cx="10" cy="10" r="1.2" />
+                </svg>
+                <span>
+                  <span className="font-semibold">{uncategorizedOfxCount}</span> transacao(oes) importada(s) sem categoria
+                </span>
+              </Link>
+            ) : null}
+            {unreconciledManualCount > 0 ? (
+              <Link
+                href="/reconciliacao"
+                className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 transition hover:border-amber-300"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                </svg>
+                <span>
+                  <span className="font-semibold">{unreconciledManualCount}</span> transacao(oes) manual(is) sem reconciliar
+                </span>
+              </Link>
+            ) : null}
+          </section>
+        ) : null}
+
         {/* Accounts and transactions */}
         <section className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-2">
           {/* Top accounts by balance */}
@@ -494,10 +545,10 @@ export default function DashboardPage() {
                 <p className="text-sm text-[var(--muted)]">Nenhum lançamento encontrado.</p>
               ) : (
                 transactions.slice(0, 8).map((item) => {
-                  const type = item.source === "transfer" ? "transfer" : item.source === "adjustment" ? "adjustment" : item.category?.category_type ?? "expense";
+                  const type = item.source === "transfer" ? "transfer" : item.source === "adjustment" ? "adjustment" : item.category?.category_type ?? null;
                   const amountVal = Number(item.amount);
-                  const sign = type === "income" ? "+" : type === "transfer" ? (amountVal > 0 ? "+" : "-") : type === "adjustment" ? (amountVal >= 0 ? "+" : "-") : "-";
-                  const tone = sign === "+" ? "text-emerald-600" : "text-rose-600";
+                  const sign = amountVal > 0 ? "+" : amountVal < 0 ? "-" : "";
+                  const tone = amountVal > 0 ? "text-emerald-600" : amountVal < 0 ? "text-rose-600" : "text-[var(--ink)]";
                   const label = type === "transfer" ? "Transferência" : type === "adjustment" ? "Ajuste" : item.category ? getCategoryDisplayLabel(item.category.id, item.category.name) : "Categoria";
                   const dateLabel = shortDateFormatter.format(parseBrazilDate(item.posted_at));
 
