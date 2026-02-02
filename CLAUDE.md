@@ -34,6 +34,7 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 │       │       ├── extrato/           # Extrato com saldo corrido
 │       │       ├── transferencias/    # Transferências entre contas
 │       │       ├── importacoes/       # Importação de extratos OFX (upload, preview, confirm)
+│       │       ├── reconciliacao/     # Reconciliação manual↔OFX com matching e ajuste de saldo
 │       │       └── regras/            # CRUD de regras de categorização automática
 │       ├── app/api/
 │       │   └── imports/
@@ -51,7 +52,9 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 │       │   ├── formatters.ts        # Formatação de moeda e datas
 │       │   ├── bank-logos.ts        # Logos de bancos brasileiros
 │       │   ├── ofx-parser.ts        # Parser OFX client-side (usa ofx-js)
-│       │   └── rule-matcher.ts      # Matching de regras de categorização (funções puras)
+│       │   ├── rule-matcher.ts      # Matching de regras de categorização (funções puras)
+│       │   ├── reconciliation-matcher.ts  # Matching manual↔OFX para reconciliação (autoMatchExact + rankCandidates com tolerâncias)
+│       │   └── balance-checker.ts   # Verificação de divergência saldo sistema vs banco via RPC
 │       └── types/
 │           ├── index.ts             # Tipos compartilhados
 │           └── ofx-js.d.ts          # Type declarations para ofx-js
@@ -77,11 +80,11 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 
 ### Tabelas principais
 
-- `families` — grupo familiar (unidade de multi-tenancy)
+- `families` — grupo familiar (unidade de multi-tenancy), `reconciliation_settings` (JSONB, tolerâncias de reconciliação)
 - `memberships` — relação user↔family com role (`owner`, `admin`, `member`, `viewer`)
 - `accounts` — contas bancárias (tipo, moeda, visibilidade `shared`/`private`, ícone, `is_reconcilable`, `reconciled_until`, `reconciled_balance`, `ofx_bank_id`, `ofx_account_id`)
 - `categories` — categorias hierárquicas (máx 2 níveis), tipo `income`/`expense`/`transfer`
-- `transactions` — lançamentos com `posted_at`, `occurred_time`, `amount`, `source`, `source_hash`, `original_description`, `auto_categorized`
+- `transactions` — lançamentos com `posted_at`, `occurred_time`, `amount`, `source`, `source_hash`, `original_description`, `auto_categorized`, `reconciliation_hint` (JSONB, dica para matching)
 - `import_batches` — rastreamento de importações OFX (status: `pending`/`processed`/`failed`)
 - `tags`, `transaction_tags` — tags customizadas
 - `attachments` — anexos com storage path
@@ -98,6 +101,9 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 - `enforce_account_archive_balance()` — trigger que exige saldo zero para arquivar conta
 - `prevent_account_delete_with_transactions()` — trigger que impede deletar conta com lançamentos
 - `enforce_reconciled_period()` — trigger que bloqueia lançamentos manuais em período reconciliado (não-admin)
+- `unreconciled_manual_transactions(uuid)` — RPC: retorna manuais em contas reconciliáveis com `posted_at ≤ reconciled_until`
+- `uncategorized_ofx_count(uuid)` — RPC: count de OFX sem categoria
+- `unreconciled_manual_count(uuid)` — RPC: count de manuais não reconciliadas
 
 ### RLS
 
@@ -123,6 +129,7 @@ Todas as tabelas têm RLS ativada. Permissões baseadas em role via `is_family_*
 - Nomes de tabelas e colunas em inglês, mensagens de erro em português
 - UUIDs como primary keys (`gen_random_uuid()`)
 - `numeric(14,2)` para valores monetários
+- **Convenção de sinais para amounts**: Todos os amounts usam sinal natural — negativo = saída, positivo = entrada. Manuais: expense salva com `-abs(valor)`, income com `+abs(valor)`. OFX armazena valor original do banco (negativo pra débito, positivo pra crédito). Transfers: `-` na origem, `+` no destino. Funções de saldo: `opening_balance + sum(amount)` — sem CASE, sem JOIN em categories
 
 ### Commits
 
@@ -174,7 +181,7 @@ python3 scripts/gen_env.py
 
 ## Navegação
 
-Itens implementados: Dashboard, Lançamentos, Contas, Categorias, Transferências, Extrato, Importações, Regras e Automação.
+Itens implementados: Dashboard, Lançamentos, Contas, Categorias, Transferências, Extrato, Importações, Reconciliação, Regras e Automação.
 Itens no menu (ainda não implementados): Orçamento, Relatórios, Metas.
 
 ## PWA (Progressive Web App)
@@ -196,7 +203,7 @@ Não usar `next-pwa` ou cache offline agressivo — dados dependem do Supabase e
 4. Conta com lançamentos **não pode ser deletada** (deve arquivar)
 5. Categoria "Ajuste de saldo" só pode ser usada com `source = 'adjustment'`
 6. Importações OFX usam `source_hash` para **deduplicação idempotente**
-7. Saldo é calculado: `opening_balance + Σ(income) - Σ(expense) + Σ(transfer) + Σ(adjustment)`
+7. Saldo é calculado: `opening_balance + Σ(amount)` — todos os amounts já carregam o sinal correto (negativo = saída, positivo = entrada), sem necessidade de CASE ou JOIN em categories
 8. Contas privadas (`visibility = 'private'`) só são visíveis ao dono
 9. Importação OFX: parsing via `ofx-js` no frontend, confirmação via API Route com `service_role`. Deduplicação dupla: por `raw_hash` no `import_batches` (idempotência de arquivo) e por `external_id`/FITID nas `transactions` (idempotência de transação). A descrição original do extrato é preservada em `original_description` para referência ao renomear
 10. Transações importadas podem ser editadas (descrição, categoria) via modal de edição acessível pela lista de lançamentos. Data de transações OFX não é editável. "Sem categoria" aparece como link clicável que abre o modal de edição
@@ -204,6 +211,11 @@ Não usar `next-pwa` ou cache offline agressivo — dados dependem do Supabase e
 12. **Regras de categorização automática**: regras definidas na tabela `rules` categorizam transações OFX automaticamente. Match por `description_contains` (case-insensitive substring), `description_regex` (regex flag `i`), `amount_exact`/`amount_min`/`amount_max` (valores absolutos), `day_of_month` (1-31), `date_after`/`date_before` (YYYY-MM-DD, inclusivo). Ação: `set_category_id` (obrigatório), `set_description` (opcional). Avaliadas em ordem de `priority` (ASC) + `created_at` (ASC). Aplicadas client-side no preview de importação com overrides manuais, e server-side como fallback para transações sem categoria após inserção
 13. **Auto-match de conta OFX**: contas com `ofx_bank_id` e `ofx_account_id` preenchidos são automaticamente selecionadas na importação OFX quando o `bankId` e `accountId` do arquivo coincidem. Campos editáveis no modal de conta (visíveis quando "Conta reconciliável" está ativo), com opção de preencher via upload de arquivo OFX. Índice único `accounts_ofx_ids_unique` em `(family_id, ofx_bank_id, ofx_account_id)` impede duplicatas
 14. **Reconciliação**: contas marcadas como `is_reconcilable` podem receber importação OFX. Após importação, `reconciled_until` e `reconciled_balance` são atualizados (só avança, nunca retrocede). Lançamentos manuais com data ≤ `reconciled_until` são bloqueados para `member`/`viewer` (trigger SQL + validação frontend). Admin/owner vê aviso mas pode prosseguir. Na tela de importação, só contas reconciliáveis aparecem no seletor
+15. **Reconciliação manual↔OFX** (`/reconciliacao`): busca manuais em contas reconciliáveis via RPC `unreconciled_manual_transactions`. Matching em 2 fases: (1) `autoMatchExact` — mesmo valor ±0.01 e mesma data, pré-selecionados para confirmação em lote; (2) `rankCandidates` — on-demand por manual, usa tolerâncias da família (`reconciliation_settings`), hints por transação (`reconciliation_hint`), score mínimo 40. Ao confirmar, manual é excluído (OFX prevalece). Configurações de tolerância (valor, data, descrição) editáveis na tela e salvas em `families.reconciliation_settings`
+16. **Divergência de saldo**: na tela de contas e na tela de reconciliação, compara `account_balance_at(id, reconciled_until)` com `reconciled_balance`. Se |diferença| > 0.01, exibe alerta amarelo com valor da divergência
+17. **Ajuste rápido de saldo**: botão "Ajustar" cria transação com `source='adjustment'`, categoria "Ajuste de saldo", `amount = -diferença`, `posted_at = reconciled_until`. Disponível na tela de contas e na tela de reconciliação
+18. **Alertas no dashboard**: seção de alertas entre resumo e grid. Mostra contagem de OFX sem categoria (link para `/lancamentos`) e manuais não reconciliadas (link para `/reconciliacao`). Dados via RPCs `uncategorized_ofx_count` e `unreconciled_manual_count`. Só exibe se count > 0
+19. **Dica de reconciliação**: ao editar transação manual em conta reconciliável, seção colapsável permite definir `reconciliation_hint` (descrição OFX contém, valor mín/máx) que influencia ranking de candidatas na reconciliação
 
 ## Roadmap
 
