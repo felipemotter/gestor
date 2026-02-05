@@ -414,12 +414,12 @@ export function AccountModal({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className={`text-sm font-semibold ${pendingOfxData ? "text-emerald-900" : "text-sky-900"}`}>
-                      {pendingOfxData ? "Extrato carregado" : "Criar a partir de extrato"}
+                      {pendingOfxData ? "Extrato OFX carregado" : "Criar a partir de extrato"}
                     </p>
                     <p className={`mt-0.5 text-xs ${pendingOfxData ? "text-emerald-700" : "text-sky-700"}`}>
                       {pendingOfxData
-                        ? `${pendingOfxData.transactions.length} transações serão importadas ao criar a conta`
-                        : "Preenche automaticamente nome, saldo inicial e IDs do banco"}
+                        ? `${pendingOfxData.transactions.length} transações de ${pendingOfxData.startDate} a ${pendingOfxData.endDate}`
+                        : "Preenche nome, saldo e importa as transações do extrato"}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -768,10 +768,14 @@ export function AccountModal({
                 className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-70`}
               >
                 {isCreatingAccount
-                  ? "Salvando..."
+                  ? pendingOfxData
+                    ? "Criando e importando..."
+                    : "Salvando..."
                   : isEditingAccount
                     ? "Salvar alteracoes"
-                    : "Criar conta"}
+                    : pendingOfxData
+                      ? `Criar conta e importar ${pendingOfxData.transactions.length} transações`
+                      : "Criar conta"}
               </button>
             </div>
           </form>
