@@ -24,6 +24,16 @@ function formatDate(dateStr: string) {
   return shortDateFormatter.format(new Date(dateStr + "T12:00:00Z"));
 }
 
+function formatSignedAmount(amount: number) {
+  const sign = amount < 0 ? "−" : "+";
+  const tone = amount < 0 ? "text-rose-600" : "text-emerald-600";
+  return (
+    <span className={`font-semibold ${tone}`}>
+      {sign}&nbsp;{currencyFormatter.format(Math.abs(amount))}
+    </span>
+  );
+}
+
 type AccountReconciliationData = {
   account: Account;
   exactMatches: ReconciliationMatch[];
@@ -148,6 +158,7 @@ export default function ReconciliacaoPage() {
           category_name: string | null;
           category_type: string | null;
           reconciliation_hint: Record<string, unknown> | null;
+          transfer_linked_id: string | null;
         }) => ({
           id: row.id,
           amount: Number(row.amount),
@@ -162,6 +173,7 @@ export default function ReconciliacaoPage() {
           account_id: row.account_id,
           account_name: row.account_name,
           reconciliation_hint: row.reconciliation_hint as ReconciliationTransaction["reconciliation_hint"],
+          transfer_linked_id: row.transfer_linked_id,
         }),
       );
 
@@ -179,7 +191,7 @@ export default function ReconciliacaoPage() {
       const { data: ofxData, error: ofxError } = await supabase
         .from("transactions")
         .select(
-          "id, amount, description, original_description, posted_at, source, external_id, category_id, account_id, accounts(name), categories(name, category_type)",
+          "id, amount, description, original_description, posted_at, source, external_id, category_id, account_id, transfer_linked_id, accounts(name), categories(name, category_type)",
         )
         .in("account_id", accountIds)
         .eq("source", "ofx")
@@ -217,6 +229,7 @@ export default function ReconciliacaoPage() {
             category_type: cat?.category_type ?? null,
             account_id: row.account_id,
             account_name: acct?.name ?? undefined,
+            transfer_linked_id: row.transfer_linked_id,
           };
         });
 
@@ -312,14 +325,19 @@ export default function ReconciliacaoPage() {
   const handleConfirmMatches = async () => {
     if (selectedMatchIds.size === 0) return;
 
+    // Map each deleted manual to its OFX replacement
     const manualIdsToDelete: string[] = [];
+    const manualToOfxMap = new Map<string, string>();
+
     for (const key of selectedMatchIds) {
       const [aiStr, miStr] = key.split("-");
       const ai = Number(aiStr);
       const mi = Number(miStr);
       const ad = accountsData[ai];
       if (ad?.exactMatches[mi]) {
-        manualIdsToDelete.push(ad.exactMatches[mi].manual.id);
+        const match = ad.exactMatches[mi];
+        manualIdsToDelete.push(match.manual.id);
+        manualToOfxMap.set(match.manual.id, match.ofx.id);
       }
     }
 
@@ -333,9 +351,41 @@ export default function ReconciliacaoPage() {
       return;
     }
 
+    // Classify transfer migrations:
+    // - Both sides deleted in same batch → link OFX replacements directly
+    // - Only one side deleted → migrate partner to OFX replacement
+    const directLinks = new Set<string>();
+    const migrateLinks: { oldPartnerId: string; replacingOfxId: string }[] = [];
+
+    for (const key of selectedMatchIds) {
+      const [aiStr, miStr] = key.split("-");
+      const ai = Number(aiStr);
+      const mi = Number(miStr);
+      const ad = accountsData[ai];
+      if (!ad?.exactMatches[mi]) continue;
+      const match = ad.exactMatches[mi];
+      const partnerId = match.manual.transfer_linked_id;
+      if (!partnerId) continue;
+
+      if (manualToOfxMap.has(partnerId)) {
+        // Both sides being deleted → link their OFX replacements directly
+        const ofxA = match.ofx.id;
+        const ofxB = manualToOfxMap.get(partnerId)!;
+        const linkKey = [ofxA, ofxB].sort().join("|");
+        directLinks.add(linkKey);
+      } else {
+        // Only this side being deleted → migrate partner to this OFX
+        migrateLinks.push({
+          oldPartnerId: partnerId,
+          replacingOfxId: match.ofx.id,
+        });
+      }
+    }
+
     setIsProcessing(true);
     setError(null);
 
+    // Delete manuals (ON DELETE SET NULL clears partner's transfer_linked_id)
     const { error: deleteError } = await supabase
       .from("transactions")
       .delete()
@@ -347,6 +397,28 @@ export default function ReconciliacaoPage() {
       return;
     }
 
+    // Re-link transfers
+    const transferCategory = categories.find((c) => c.category_type === "transfer");
+    if (transferCategory) {
+      // Direct links: both sides were deleted, link OFX↔OFX
+      for (const linkKey of directLinks) {
+        const [ofxA, ofxB] = linkKey.split("|");
+        await supabase.rpc("link_transfer", {
+          tx_a: ofxA,
+          tx_b: ofxB,
+          transfer_category: transferCategory.id,
+        });
+      }
+      // Migrate links: only one side was deleted, re-link partner to OFX
+      for (const migration of migrateLinks) {
+        await supabase.rpc("migrate_transfer_link", {
+          old_partner_id: migration.oldPartnerId,
+          new_ofx_id: migration.replacingOfxId,
+          transfer_category: transferCategory.id,
+        });
+      }
+    }
+
     setSuccessMessage(
       `${manualIdsToDelete.length} lancamento(s) manual(is) excluido(s) com sucesso.`,
     );
@@ -355,8 +427,8 @@ export default function ReconciliacaoPage() {
     handleReconcile();
   };
 
-  // Link a single manual to an OFX candidate (delete manual)
-  const handleLinkManual = async (manualId: string) => {
+  // Link a single manual to an OFX candidate (delete manual, migrate transfer link if needed)
+  const handleLinkManual = async (manualId: string, replacingOfxId: string) => {
     if (
       !window.confirm(
         "Excluir o lancamento manual? A transacao OFX sera mantida.",
@@ -365,7 +437,14 @@ export default function ReconciliacaoPage() {
       return;
     }
 
+    // Check if manual has a transfer link that needs migration
+    const manual = accountsData
+      .flatMap((ad) => ad.unmatchedManuals)
+      .find((m) => m.id === manualId);
+    const oldPartnerId = manual?.transfer_linked_id;
+
     setError(null);
+    // Delete manual (ON DELETE SET NULL clears partner's transfer_linked_id)
     const { error: deleteError } = await supabase
       .from("transactions")
       .delete()
@@ -374,6 +453,18 @@ export default function ReconciliacaoPage() {
     if (deleteError) {
       setError(deleteError.message);
       return;
+    }
+
+    // Migrate transfer link if the manual was linked
+    if (oldPartnerId) {
+      const transferCategory = categories.find((c) => c.category_type === "transfer");
+      if (transferCategory) {
+        await supabase.rpc("migrate_transfer_link", {
+          old_partner_id: oldPartnerId,
+          new_ofx_id: replacingOfxId,
+          transfer_category: transferCategory.id,
+        });
+      }
     }
 
     setSuccessMessage("Lancamento manual excluido com sucesso.");
@@ -685,7 +776,9 @@ export default function ReconciliacaoPage() {
               ) : null}
 
               {/* Per-account sections (only those with pendencies) */}
-              {accountsData.filter((ad) => ad.exactMatches.length > 0 || ad.unmatchedManuals.length > 0 || ad.discrepancy != null).map((ad, accountIdx) => {
+              {accountsData.filter((ad) => {
+                return ad.exactMatches.length > 0 || ad.unmatchedManuals.length > 0 || ad.discrepancy != null;
+              }).map((ad, accountIdx) => {
                 const isExpanded = expandedAccountIds.has(ad.account.id);
                 const pendingCount = ad.exactMatches.length + ad.unmatchedManuals.length;
 
@@ -761,19 +854,26 @@ export default function ReconciliacaoPage() {
                         {/* Discrepancy alert */}
                         {ad.discrepancy ? (
                           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                            <span className="font-semibold">
-                              Divergencia de saldo
-                            </span>
-                            <span className="ml-2">
-                              Sistema:{" "}
-                              {currencyFormatter.format(ad.discrepancy.calculatedBalance)} |
-                              Banco:{" "}
-                              {currencyFormatter.format(ad.discrepancy.reconciledBalance)} |
-                              Diferenca:{" "}
+                            <div>
                               <span className="font-semibold">
-                                {currencyFormatter.format(ad.discrepancy.difference)}
+                                Divergencia de saldo
                               </span>
-                            </span>
+                              <span className="ml-2">
+                                Sistema:{" "}
+                                {currencyFormatter.format(ad.discrepancy.calculatedBalance)} |
+                                Banco:{" "}
+                                {currencyFormatter.format(ad.discrepancy.reconciledBalance)} |
+                                Diferenca:{" "}
+                                <span className="font-semibold">
+                                  {currencyFormatter.format(ad.discrepancy.difference)}
+                                </span>
+                              </span>
+                            </div>
+                            {ad.exactMatches.length === 0 && ad.unmatchedManuals.length === 0 ? (
+                              <p className="mt-1 text-xs text-amber-700">
+                                Nao ha manuais pendentes no periodo OFX. Verifique lancamentos anteriores ao primeiro extrato ou o saldo inicial da conta.
+                              </p>
+                            ) : null}
                           </div>
                         ) : null}
 
@@ -836,8 +936,8 @@ export default function ReconciliacaoPage() {
                                           <span className="text-xs text-[var(--muted)]">
                                             {getCategoryLabel(match.manual.category_id)}
                                           </span>
-                                          <span className="text-sm font-semibold text-[var(--ink)]">
-                                            {currencyFormatter.format(Math.abs(match.manual.amount))}
+                                          <span className="text-sm">
+                                            {formatSignedAmount(match.manual.amount)}
                                           </span>
                                         </div>
                                       </div>
@@ -861,8 +961,8 @@ export default function ReconciliacaoPage() {
                                           <span className="text-xs text-[var(--muted)]">
                                             {getCategoryLabel(match.ofx.category_id)}
                                           </span>
-                                          <span className="text-sm font-semibold text-[var(--ink)]">
-                                            {currencyFormatter.format(Math.abs(match.ofx.amount))}
+                                          <span className="text-sm">
+                                            {formatSignedAmount(match.ofx.amount)}
                                           </span>
                                         </div>
                                       </div>
@@ -910,8 +1010,8 @@ export default function ReconciliacaoPage() {
                                             </div>
                                           </div>
                                         </div>
-                                        <span className="shrink-0 text-sm font-semibold text-[var(--ink)]">
-                                          {currencyFormatter.format(Math.abs(manual.amount))}
+                                        <span className="shrink-0 text-sm">
+                                          {formatSignedAmount(manual.amount)}
                                         </span>
                                       </div>
                                       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1019,7 +1119,7 @@ export default function ReconciliacaoPage() {
                                                             ) : null}
                                                           </span>
                                                           <span>
-                                                            {currencyFormatter.format(Math.abs(candidate.ofx.amount))}
+                                                            {formatSignedAmount(candidate.ofx.amount)}
                                                             {Math.abs(amountDiff) > 0.01 ? (
                                                               <span className="ml-1 font-semibold text-amber-600">
                                                                 ({amountDiff > 0 ? "+" : ""}{currencyFormatter.format(amountDiff)})
@@ -1033,7 +1133,7 @@ export default function ReconciliacaoPage() {
                                                     <button
                                                       type="button"
                                                       onClick={() =>
-                                                        handleLinkManual(manual.id)
+                                                        handleLinkManual(manual.id, candidate.ofx.id)
                                                       }
                                                       className="shrink-0 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
                                                     >
