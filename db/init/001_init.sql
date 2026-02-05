@@ -218,6 +218,7 @@ create table if not exists public.transactions (
   original_description text,
   auto_categorized boolean not null default false,
   reconciliation_hint jsonb,
+  transfer_linked_id uuid references public.transactions(id) on delete set null,
   import_batch_id uuid references public.import_batches(id),
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
@@ -234,6 +235,10 @@ create index if not exists transactions_account_posted_time_idx
 
 create index if not exists transactions_source_hash_idx
   on public.transactions (source_hash);
+
+create index if not exists transactions_transfer_linked_id_idx
+  on public.transactions (transfer_linked_id)
+  where transfer_linked_id is not null;
 
 create or replace function public.enforce_balance_adjust_category_usage()
 returns trigger
@@ -516,7 +521,8 @@ returns table (
   category_id uuid,
   category_name text,
   category_type text,
-  reconciliation_hint jsonb
+  reconciliation_hint jsonb,
+  transfer_linked_id uuid
 )
 language sql
 stable
@@ -536,7 +542,8 @@ as $$
     t.category_id,
     c.name as category_name,
     c.category_type::text as category_type,
-    t.reconciliation_hint
+    t.reconciliation_hint,
+    t.transfer_linked_id
   from public.transactions t
   join public.accounts a on a.id = t.account_id
   left join public.categories c on c.id = t.category_id
@@ -549,7 +556,7 @@ as $$
       from public.transactions ox
       where ox.account_id = a.id and ox.source = 'ofx'
     ), a.reconciled_until)
-    and (t.source is null or t.source = 'manual')
+    and (t.source is null or t.source in ('manual', 'transfer'))
     and (a.visibility = 'shared' or a.owner_user_id = (select auth.uid()))
   order by t.posted_at asc, t.created_at asc;
 $$;
@@ -588,7 +595,12 @@ as $$
     and a.is_reconcilable = true
     and a.reconciled_until is not null
     and t.posted_at <= a.reconciled_until
-    and (t.source is null or t.source = 'manual')
+    and t.posted_at >= coalesce((
+      select min(ox.posted_at)
+      from public.transactions ox
+      where ox.account_id = a.id and ox.source = 'ofx'
+    ), a.reconciled_until)
+    and (t.source is null or t.source in ('manual', 'transfer'))
     and (a.visibility = 'shared' or a.owner_user_id = (select auth.uid()));
 $$;
 
@@ -880,6 +892,142 @@ create policy audit_logs_insert on public.audit_logs
 create policy audit_logs_delete on public.audit_logs
   for delete
   using (public.is_family_admin(family_id));
+
+-- Transfer link constraint trigger (deferrable: validates at COMMIT)
+create or replace function public.validate_transfer_link()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  partner_linked_id uuid;
+  partner_account_id uuid;
+  partner_amount numeric;
+begin
+  if new.transfer_linked_id is null then
+    return new;
+  end if;
+
+  select t.transfer_linked_id, t.account_id, t.amount
+    into partner_linked_id, partner_account_id, partner_amount
+    from public.transactions t
+    where t.id = new.transfer_linked_id;
+
+  if not found then
+    raise exception 'transfer_linked_id aponta para transacao inexistente.';
+  end if;
+
+  if partner_linked_id is distinct from new.id then
+    raise exception 'transfer_linked_id nao e bidirecional: parceiro nao aponta de volta.';
+  end if;
+
+  if partner_account_id = new.account_id then
+    raise exception 'Transferencia deve ser entre contas diferentes.';
+  end if;
+
+  if sign(new.amount) = sign(partner_amount) then
+    raise exception 'Transferencia exige sinais opostos nos amounts.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_validate_transfer_link on public.transactions;
+create constraint trigger trg_validate_transfer_link
+  after insert or update of transfer_linked_id on public.transactions
+  deferrable initially deferred
+  for each row
+  execute function public.validate_transfer_link();
+
+-- RPC: link_transfer — atomically link two transactions as transfer
+create or replace function public.link_transfer(
+  tx_a uuid,
+  tx_b uuid,
+  transfer_category uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.transactions
+    set transfer_linked_id = tx_b,
+        category_id = transfer_category,
+        auto_categorized = false
+    where id = tx_a;
+
+  update public.transactions
+    set transfer_linked_id = tx_a,
+        category_id = transfer_category,
+        auto_categorized = false
+    where id = tx_b;
+end;
+$$;
+
+grant execute on function public.link_transfer(uuid, uuid, uuid) to authenticated, service_role;
+
+-- RPC: unlink_transfer — atomically unlink a transfer pair
+create or replace function public.unlink_transfer(tx_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  partner_id uuid;
+begin
+  select transfer_linked_id into partner_id
+    from public.transactions
+    where id = tx_id;
+
+  if partner_id is null then
+    return;
+  end if;
+
+  update public.transactions
+    set transfer_linked_id = null,
+        category_id = null
+    where id = tx_id;
+
+  update public.transactions
+    set transfer_linked_id = null,
+        category_id = null
+    where id = partner_id;
+end;
+$$;
+
+grant execute on function public.unlink_transfer(uuid) to authenticated, service_role;
+
+-- RPC: migrate_transfer_link — re-link old partner to new OFX after manual deletion
+create or replace function public.migrate_transfer_link(
+  old_partner_id uuid,
+  new_ofx_id uuid,
+  transfer_category uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.transactions
+    set transfer_linked_id = new_ofx_id,
+        category_id = transfer_category,
+        auto_categorized = false
+    where id = old_partner_id;
+
+  update public.transactions
+    set transfer_linked_id = old_partner_id,
+        category_id = transfer_category,
+        auto_categorized = false
+    where id = new_ofx_id;
+end;
+$$;
+
+grant execute on function public.migrate_transfer_link(uuid, uuid, uuid) to authenticated, service_role;
 
 grant usage on schema public to authenticated;
 
