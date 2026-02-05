@@ -542,6 +542,24 @@ export default function ImportacoesPage() {
                       Nenhuma conta reconciliável. Habilite a opção &quot;Conta reconciliável&quot; no cadastro da conta para permitir importações.
                     </p>
                   )}
+                  {/* Gap warning */}
+                  {(() => {
+                    const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
+                    if (!selectedAccount?.reconciled_until || !parsedData?.startDate) return null;
+                    if (parsedData.startDate <= selectedAccount.reconciled_until) return null;
+                    const gapDays = Math.ceil(
+                      (new Date(parsedData.startDate).getTime() - new Date(selectedAccount.reconciled_until).getTime()) / 86400000
+                    );
+                    return (
+                      <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        <p className="font-semibold">Gap de {gapDays} dia(s) detectado</p>
+                        <p className="mt-1 text-xs">
+                          O último extrato vai até <strong>{selectedAccount.reconciled_until}</strong>, mas este começa em <strong>{parsedData.startDate}</strong>.
+                          {" "}Importe um extrato que comece em {selectedAccount.reconciled_until} ou antes para garantir continuidade.
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Transaction list */}
@@ -642,14 +660,24 @@ export default function ImportacoesPage() {
                   >
                     Cancelar
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmImport}
-                    disabled={!selectedAccountId}
-                    className={`${primaryButton} disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    Importar {parsedData.transactions.length} transações
-                  </button>
+                  {(() => {
+                    const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
+                    const hasGap = Boolean(
+                      selectedAccount?.reconciled_until &&
+                      parsedData?.startDate &&
+                      parsedData.startDate > selectedAccount.reconciled_until
+                    );
+                    return (
+                      <button
+                        type="button"
+                        onClick={handleConfirmImport}
+                        disabled={!selectedAccountId || hasGap}
+                        className={`${primaryButton} disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        Importar {parsedData.transactions.length} transações
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             )}

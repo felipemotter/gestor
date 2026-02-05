@@ -78,6 +78,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check overlap requirement for reconcilable accounts
+    const { data: account } = await supabase
+      .from("accounts")
+      .select("is_reconcilable, reconciled_until")
+      .eq("id", accountId)
+      .single();
+
+    if (account?.is_reconcilable && account.reconciled_until && startDate) {
+      // New OFX must start on or before reconciled_until (overlap required)
+      if (startDate > account.reconciled_until) {
+        const gap = Math.ceil(
+          (new Date(startDate).getTime() - new Date(account.reconciled_until).getTime()) / 86400000
+        );
+        return NextResponse.json(
+          {
+            error: `Gap de ${gap} dia(s) detectado. O extrato deve começar em ${account.reconciled_until} ou antes para garantir sobreposição.`,
+            code: "GAP_DETECTED"
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create import batch
     const { data: batch, error: batchError } = await supabase
       .from("import_batches")
