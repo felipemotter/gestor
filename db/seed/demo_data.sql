@@ -82,6 +82,10 @@ DECLARE
   -- Transaction UUIDs (para vincular tags)
   v_tx uuid;
 
+  -- Transaction UUIDs (para transfer_linked_id demo)
+  v_tx_ted_vc_out uuid := 'a1000000-0000-0000-0000-000000000001';
+  v_tx_ted_nu_in  uuid := 'a1000000-0000-0000-0000-000000000002';
+
   -- Date helpers
   v_today         date := CURRENT_DATE;
   v_m0            date;  -- inicio do mes atual
@@ -720,6 +724,17 @@ BEGIN
     VALUES (v_acc_fl_nubank_cc, v_cat_uber, -37.50, v_m1 + 16, 'UBER *UBER *TRIP', 'UBER *UBER *TRIP', 'ofx', md5('ofx_fln_005'), 'FNU20250116001', v_batch_fl_nubank, true, v_flavi_uid);
 
   -- =========================================================================
+  -- OFX TRANSFER LINKING DEMO
+  -- TED Viacredi → Nubank Felipe (R$ 1.500,00, dia m1+6)
+  -- Ambos lados OFX, vinculados via transfer_linked_id
+  -- =========================================================================
+
+  INSERT INTO transactions (id, account_id, category_id, amount, posted_at, description, original_description, source, source_hash, external_id, import_batch_id, auto_categorized, transfer_linked_id, created_by)
+  VALUES
+    (v_tx_ted_vc_out, v_acc_fe_viacredi, v_cat_transferencia, -1500.00, v_m1 + 6, 'TED ENVIADA NUBANK', 'TED ENVIADA NUBANK', 'ofx', md5('ofx_vc_ted_001'), 'VC20250106TED', v_batch_viacredi, false, v_tx_ted_nu_in, v_felipe_uid),
+    (v_tx_ted_nu_in,  v_acc_fe_nubank_cc, v_cat_transferencia, 1500.00,  v_m1 + 6, 'TED RECEBIDO VIACREDI', 'TED RECEBIDO VIACREDI', 'ofx', md5('ofx_nu_ted_001'), 'NU20250106TED', v_batch_nubank_2, false, v_tx_ted_vc_out, v_felipe_uid);
+
+  -- =========================================================================
   -- RULES (auto-categorização)
   -- =========================================================================
 
@@ -790,8 +805,8 @@ BEGIN
     WHERE t.account_id = a.id AND t.source = 'ofx'
   ) WHERE a.is_reconcilable;
 
-  -- reconciled_balance = saldo esperado apos reconciliar (deletar manuais duplicados)
-  -- Inclui: tudo exceto manuais que caem no periodo com cobertura OFX
+  -- reconciled_balance = saldo esperado apos reconciliar (deletar manuais e transfers duplicados)
+  -- Inclui: tudo exceto manuais/transfers que caem no periodo com cobertura OFX
   -- Manuais anteriores ao primeiro OFX nao sao duplicatas, entram no saldo
   UPDATE accounts a SET reconciled_balance = (
     SELECT coalesce(a.opening_balance, 0) + coalesce((
@@ -800,7 +815,7 @@ BEGIN
       WHERE t.account_id = a.id
         AND t.posted_at <= a.reconciled_until
         AND NOT (
-          t.source = 'manual'
+          t.source in ('manual', 'transfer')
           AND t.posted_at >= coalesce((
             SELECT min(ox.posted_at) FROM transactions ox
             WHERE ox.account_id = a.id AND ox.source = 'ofx'
