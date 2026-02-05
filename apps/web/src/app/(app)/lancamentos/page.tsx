@@ -50,6 +50,7 @@ type TransactionRow = {
   source: string | null;
   external_id: string | null;
   auto_categorized: boolean;
+  transfer_linked_id: string | null;
   account: { id: string; name: string } | null;
   category: { id: string; name: string; category_type: string } | null;
 };
@@ -167,7 +168,7 @@ export default function LancamentosPage() {
       let query = supabase
         .from("transactions")
         .select(
-          "id, amount, description, original_description, posted_at, created_at, source, external_id, auto_categorized, account:accounts(id, name), category:categories(id, name, category_type)",
+          "id, amount, description, original_description, posted_at, created_at, source, external_id, auto_categorized, transfer_linked_id, account:accounts(id, name), category:categories(id, name, category_type)",
           { count: "exact" },
         )
         .in("account_id", effectiveAccountIds)
@@ -209,6 +210,7 @@ export default function LancamentosPage() {
         source: item.source,
         external_id: item.external_id,
         auto_categorized: (item as Record<string, unknown>).auto_categorized === true,
+        transfer_linked_id: (item as Record<string, unknown>).transfer_linked_id as string | null,
         account: item.account as unknown as { id: string; name: string } | null,
         category: item.category as unknown as { id: string; name: string; category_type: string } | null,
       }));
@@ -262,6 +264,7 @@ export default function LancamentosPage() {
   const typeFilteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
       const isAdjustment = tx.source === "adjustment";
+      const isLinkedTransfer = Boolean(tx.transfer_linked_id) || (tx.category?.category_type === "transfer" && tx.source === "ofx");
       const rawValue = Number(tx.amount);
       const adjustmentType =
         isAdjustment && Number.isFinite(rawValue)
@@ -270,7 +273,7 @@ export default function LancamentosPage() {
             : "expense"
           : null;
       const typeValue =
-        tx.source === "transfer"
+        tx.source === "transfer" || isLinkedTransfer
           ? "transfer"
           : isAdjustment
             ? adjustmentType
@@ -476,8 +479,9 @@ export default function LancamentosPage() {
       posted_at: tx.posted_at,
       source: tx.source,
       external_id: tx.external_id,
+      transfer_linked_id: tx.transfer_linked_id,
     };
-    const catType = tx.category?.category_type as "expense" | "income" | undefined;
+    const catType = tx.category?.category_type as "expense" | "income" | "transfer" | undefined;
     openTransactionModal(catType, edit);
   };
 
@@ -1029,7 +1033,9 @@ export default function LancamentosPage() {
                     </p>
                     <div className="mt-2 space-y-2">
                       {dayTransactions.map((tx) => {
-                        const isTransferRow = tx.source === "transfer";
+                        const isManualTransfer = tx.source === "transfer";
+                        const isLinkedOFXTransfer = Boolean(tx.transfer_linked_id) || (tx.category?.category_type === "transfer" && tx.source === "ofx");
+                        const isTransferRow = isManualTransfer || isLinkedOFXTransfer;
                         const isAdjustRow = tx.source === "adjustment";
                         const rawValue = Number(tx.amount);
                         const isNumeric = Number.isFinite(rawValue);
@@ -1052,7 +1058,7 @@ export default function LancamentosPage() {
                           : categoryType === "expense" ? "bg-rose-100 text-rose-600"
                           : "bg-slate-100 text-slate-500";
 
-                        const canEdit = !isTransferRow && !isAdjustRow;
+                        const canEdit = !isManualTransfer && !isAdjustRow;
 
                         return (
                           <button
@@ -1140,7 +1146,9 @@ export default function LancamentosPage() {
                   </tr>
                 ) : (
                   visibleTransactions.map((tx) => {
-                    const isTransferRow = tx.source === "transfer";
+                    const isManualTransfer = tx.source === "transfer";
+                    const isLinkedOFXTransfer = Boolean(tx.transfer_linked_id) || (tx.category?.category_type === "transfer" && tx.source === "ofx");
+                    const isTransferRow = isManualTransfer || isLinkedOFXTransfer;
                     const isAdjustRow = tx.source === "adjustment";
                     const rawValue = Number(tx.amount);
                     const isNumeric = Number.isFinite(rawValue);
@@ -1162,7 +1170,7 @@ export default function LancamentosPage() {
                     const typeLabel = isTransferRow ? "Transferência" : isAdjustRow ? "Ajuste"
                       : categoryType === "income" ? "Receita" : categoryType === "expense" ? "Despesa" : "Outro";
                     const hasOriginalDescription = tx.original_description && tx.original_description !== tx.description;
-                    const canEdit = !isTransferRow && !isAdjustRow;
+                    const canEdit = !isManualTransfer && !isAdjustRow;
 
                     return (
                       <tr

@@ -63,6 +63,7 @@ export type EditTransaction = {
   posted_at: string;
   source: string | null;
   external_id: string | null;
+  transfer_linked_id?: string | null;
 };
 
 type TransactionModalState = {

@@ -7,6 +7,7 @@ import { Header } from "@/components/layout/Header";
 import { DonutChart, buildDonutSegments } from "@/components/charts/DonutChart";
 import { CashflowChart } from "@/components/charts/CashflowChart";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { checkAccountDiscrepancy, type BalanceDiscrepancy } from "@/lib/balance-checker";
 import {
   getMonthRange,
   isDateOnly,
@@ -58,6 +59,7 @@ export default function DashboardPage() {
   // Alert counts
   const [uncategorizedOfxCount, setUncategorizedOfxCount] = useState(0);
   const [unreconciledManualCount, setUnreconciledManualCount] = useState(0);
+  const [discrepancies, setDiscrepancies] = useState<BalanceDiscrepancy[]>([]);
 
   // Dashboard-specific state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -164,12 +166,13 @@ export default function DashboardPage() {
     loadSummary();
   }, [activeFamilyId, session?.access_token, accounts, activeMonth, dataRefreshCounter]);
 
-  // Load alert counts (uncategorized OFX + unreconciled manuals)
+  // Load alert counts (uncategorized OFX + unreconciled manuals + discrepancies)
   useEffect(() => {
     if (!activeFamilyId || !session?.access_token) {
       /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset on missing data */
       setUncategorizedOfxCount(0);
       setUnreconciledManualCount(0);
+      setDiscrepancies([]);
       /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
@@ -181,10 +184,21 @@ export default function DashboardPage() {
       ]);
       setUncategorizedOfxCount(Number(ofxRes.data) || 0);
       setUnreconciledManualCount(Number(manualRes.data) || 0);
+
+      // Check balance discrepancies for reconcilable accounts
+      const reconcilable = accounts.filter(
+        (a) => a.is_reconcilable && a.reconciled_balance != null && a.reconciled_until,
+      );
+      if (reconcilable.length > 0) {
+        const results = await Promise.all(reconcilable.map((a) => checkAccountDiscrepancy(a)));
+        setDiscrepancies(results.filter((d): d is BalanceDiscrepancy => d != null));
+      } else {
+        setDiscrepancies([]);
+      }
     };
 
     loadAlerts();
-  }, [activeFamilyId, session?.access_token, dataRefreshCounter]);
+  }, [activeFamilyId, session?.access_token, accounts, dataRefreshCounter]);
 
   // Load dashboard analytics
   useEffect(() => {
@@ -444,8 +458,23 @@ export default function DashboardPage() {
         </section>
 
         {/* Alerts */}
-        {(uncategorizedOfxCount > 0 || unreconciledManualCount > 0) ? (
+        {(uncategorizedOfxCount > 0 || unreconciledManualCount > 0 || discrepancies.length > 0) ? (
           <section className="flex flex-col gap-3">
+            {discrepancies.length > 0 ? (
+              <Link
+                href="/reconciliacao"
+                className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 transition hover:border-amber-300"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span>
+                  <span className="font-semibold">{discrepancies.length}</span> conta(s) com divergencia de saldo
+                </span>
+              </Link>
+            ) : null}
             {uncategorizedOfxCount > 0 ? (
               <Link
                 href="/lancamentos?filter=uncategorized"
