@@ -67,6 +67,7 @@ export type ReconciliationTransaction = {
   account_id?: string;
   account_name?: string;
   reconciliation_hint?: ReconciliationHint | null;
+  transfer_linked_id?: string | null;
 };
 
 export type ReconciliationMatch = {

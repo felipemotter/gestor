@@ -109,6 +109,18 @@ export function TransactionModal() {
   const [hintAmountMin, setHintAmountMin] = useState("");
   const [hintAmountMax, setHintAmountMax] = useState("");
 
+  // Transfer linking state (OFX edit mode)
+  const [transferTargetAccountId, setTransferTargetAccountId] = useState("");
+  const [transferCandidates, setTransferCandidates] = useState<Array<{
+    id: string;
+    amount: number;
+    description: string | null;
+    posted_at: string;
+  }>>([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState("");
+  const [isSearchingCandidates, setIsSearchingCandidates] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
+
   // Error and loading state
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
@@ -135,10 +147,16 @@ export function TransactionModal() {
       if (editTx) {
         // Edit mode: pre-fill from existing transaction
         const cat = editTx.category_id ? categoriesById[editTx.category_id] : null;
-        const catType = cat?.category_type as "expense" | "income" | undefined;
-        setTransactionType(catType ?? transactionModal.initialType ?? "expense");
+        const catType = cat?.category_type as "expense" | "income" | "transfer" | undefined;
+        const isLinkedTransfer = Boolean(editTx.transfer_linked_id) || catType === "transfer";
+        const inferredType = isLinkedTransfer ? "transfer" : (catType ?? (Number(editTx.amount) >= 0 ? "income" : "expense"));
+        setTransactionType(inferredType);
         setTransactionAccountId(editTx.account_id ?? "");
         setTransactionDestinationAccountId("");
+        setTransferTargetAccountId("");
+        setTransferCandidates([]);
+        setSelectedCandidateId("");
+        setIsUnlinking(false);
         setTransactionCategoryId(editTx.category_id ?? "");
         const rawAmount = Number(editTx.amount);
         setTransactionAmount(Number.isFinite(rawAmount) ? String(Math.abs(rawAmount)) : editTx.amount);
@@ -158,6 +176,10 @@ export function TransactionModal() {
         setTransactionType(transactionModal.initialType ?? "expense");
         setTransactionAccountId("");
         setTransactionDestinationAccountId("");
+        setTransferTargetAccountId("");
+        setTransferCandidates([]);
+        setSelectedCandidateId("");
+        setIsUnlinking(false);
         setTransactionCategoryId("");
         setTransactionAmount("");
         setTransactionDescription("");
@@ -222,9 +244,84 @@ export function TransactionModal() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [transactionModal.isOpen, isCalendarOpen, closeTransactionModal]);
 
+  // Search OFX candidates when target account changes
+  useEffect(() => {
+    if (!isOFXTransaction || transactionType !== "transfer" || !transferTargetAccountId || !editTx) {
+      setTransferCandidates([]);
+      setSelectedCandidateId("");
+      return;
+    }
+
+    const searchCandidates = async () => {
+      setIsSearchingCandidates(true);
+      setTransferCandidates([]);
+      setSelectedCandidateId("");
+
+      const txAmount = Number(editTx.amount);
+      const oppositeAmount = -txAmount;
+      const tolerance = 0.01;
+      const txDate = editTx.posted_at?.slice(0, 10);
+
+      if (!txDate || !Number.isFinite(txAmount)) {
+        setIsSearchingCandidates(false);
+        return;
+      }
+
+      // Date range: ±3 days
+      const dateObj = new Date(txDate + "T12:00:00Z");
+      const minDate = new Date(dateObj.getTime() - 3 * 86400000).toISOString().slice(0, 10);
+      const maxDate = new Date(dateObj.getTime() + 3 * 86400000).toISOString().slice(0, 10);
+
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("id, amount, description, posted_at")
+        .eq("account_id", transferTargetAccountId)
+        .eq("source", "ofx")
+        .is("transfer_linked_id", null)
+        .gte("posted_at", minDate)
+        .lte("posted_at", maxDate)
+        .gte("amount", Math.min(oppositeAmount - tolerance, oppositeAmount + tolerance))
+        .lte("amount", Math.max(oppositeAmount - tolerance, oppositeAmount + tolerance));
+
+      if (error) {
+        setIsSearchingCandidates(false);
+        return;
+      }
+
+      const candidates = (data ?? []).map((item) => ({
+        id: item.id,
+        amount: Number(item.amount),
+        description: item.description,
+        posted_at: item.posted_at,
+      }));
+
+      setTransferCandidates(candidates);
+      // Auto-select if exactly one candidate
+      if (candidates.length === 1) {
+        setSelectedCandidateId(candidates[0].id);
+      }
+      setIsSearchingCandidates(false);
+    };
+
+    searchCandidates();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transferTargetAccountId, transactionType]);
+
   // Derived state
   const isTransfer = transactionType === "transfer";
+  const isOFXTransferLinking = isEditing && isOFXTransaction && isTransfer;
+  const isAlreadyLinked = Boolean(editTx?.transfer_linked_id);
   const canCreateTransaction = accounts.length > 0;
+
+  // OFX transfer: infer direction from amount sign
+  const editAmount = Number(editTx?.amount);
+  const isOutgoing = Number.isFinite(editAmount) && editAmount < 0;
+  const transferAccountLabel = isOutgoing ? "Conta destino" : "Conta origem";
+
+  // Available target accounts for OFX transfer linking (exclude current account)
+  const transferTargetAccounts = accounts.filter(
+    (account) => account.id !== editTx?.account_id,
+  );
 
   const getCategoryDisplayLabel = (id: string, name: string) => {
     const category = categoriesById[id];
@@ -439,57 +536,130 @@ export function TransactionModal() {
 
     // Edit mode: update existing transaction
     if (isEditing && editTx) {
-      // Build reconciliation_hint JSONB
-      let reconciliationHint: Record<string, unknown> | null = null;
-      if (showHintSection) {
-        const hasHintData = hintDescription.trim() || hintAmountMin || hintAmountMax;
-        if (hasHintData) {
-          reconciliationHint = {};
-          if (hintDescription.trim()) {
-            reconciliationHint.match_description = hintDescription.trim();
+      // OFX Transfer linking flow
+      if (isOFXTransferLinking && !isAlreadyLinked) {
+        if (!transferTargetAccountId) {
+          setTransactionError("Selecione a conta para vincular a transferência.");
+          setIsCreatingTransaction(false);
+          return;
+        }
+
+        // Find transfer category
+        const transferCategory = categories.find((c) => c.category_type === "transfer");
+        const transferCategoryId = transferCategory?.id ?? null;
+
+        if (selectedCandidateId) {
+          // Link two existing OFX transactions atomically via RPC
+          const { error: linkErr } = await supabase.rpc("link_transfer", {
+            tx_a: editTx.id,
+            tx_b: selectedCandidateId,
+            transfer_category: transferCategoryId,
+          });
+          if (linkErr) {
+            insertError = linkErr;
           }
-          if (hintAmountMin) {
-            reconciliationHint.match_amount_min = Number(hintAmountMin);
-          }
-          if (hintAmountMax) {
-            reconciliationHint.match_amount_max = Number(hintAmountMax);
+        } else {
+          // Create counterpart in target account
+          const txAmount = Number(editTx.amount);
+          const counterpartAmount = -txAmount;
+          const currentAccount = accounts.find((a) => a.id === editTx.account_id);
+          const counterpartDesc = isOutgoing
+            ? `Transferência de ${currentAccount?.name ?? "conta"}`
+            : `Transferência para ${currentAccount?.name ?? "conta"}`;
+
+          const { data: inserted, error: insertErr } = await supabase
+            .from("transactions")
+            .insert({
+              account_id: transferTargetAccountId,
+              category_id: transferCategoryId,
+              amount: counterpartAmount,
+              currency: "BRL",
+              description: counterpartDesc,
+              posted_at: editTx.posted_at,
+              source: "manual",
+            })
+            .select("id")
+            .single();
+
+          if (insertErr || !inserted) {
+            insertError = insertErr ?? { message: "Erro ao criar contrapartida" };
+          } else {
+            // Link both sides atomically via RPC
+            const { error: linkErr } = await supabase.rpc("link_transfer", {
+              tx_a: editTx.id,
+              tx_b: inserted.id,
+              transfer_category: transferCategoryId,
+            });
+            // Also update description on the OFX side (separate from link)
+            if (!linkErr) {
+              const newDesc = transactionDescription.trim() || editTx.description;
+              if (newDesc !== editTx.description) {
+                await supabase
+                  .from("transactions")
+                  .update({ description: newDesc })
+                  .eq("id", editTx.id);
+              }
+            }
+            if (linkErr) {
+              insertError = linkErr;
+            }
           }
         }
-      }
+      } else {
+        // Standard edit flow (non-transfer)
 
-      // Determine if category type changed and flip amount sign accordingly
-      const oldCat = editTx.category_id ? categoriesById[editTx.category_id] : null;
-      const newCat = transactionCategoryId ? categoriesById[transactionCategoryId] : null;
-      const oldType = oldCat?.category_type;
-      const newType = newCat?.category_type;
-      const currentAmount = Number(editTx.amount);
+        // Build reconciliation_hint JSONB
+        let reconciliationHint: Record<string, unknown> | null = null;
+        if (showHintSection) {
+          const hasHintData = hintDescription.trim() || hintAmountMin || hintAmountMax;
+          if (hasHintData) {
+            reconciliationHint = {};
+            if (hintDescription.trim()) {
+              reconciliationHint.match_description = hintDescription.trim();
+            }
+            if (hintAmountMin) {
+              reconciliationHint.match_amount_min = Number(hintAmountMin);
+            }
+            if (hintAmountMax) {
+              reconciliationHint.match_amount_max = Number(hintAmountMax);
+            }
+          }
+        }
 
-      const updatePayload: Record<string, unknown> = {
-        description: transactionDescription.trim() || null,
-        category_id: transactionCategoryId || null,
-        posted_at: transactionDate,
-        auto_categorized: false,
-      };
+        // Determine if category type changed and flip amount sign accordingly
+        const oldCat = editTx.category_id ? categoriesById[editTx.category_id] : null;
+        const newCat = transactionCategoryId ? categoriesById[transactionCategoryId] : null;
+        const oldType = oldCat?.category_type;
+        const newType = newCat?.category_type;
+        const currentAmount = Number(editTx.amount);
 
-      // Flip sign when switching between expense and income
-      if (
-        Number.isFinite(currentAmount) &&
-        oldType && newType && oldType !== newType &&
-        ((oldType === "expense" && newType === "income") ||
-         (oldType === "income" && newType === "expense"))
-      ) {
-        updatePayload.amount = -currentAmount;
-      }
-      if (showHintSection) {
-        updatePayload.reconciliation_hint = reconciliationHint;
-      }
+        const updatePayload: Record<string, unknown> = {
+          description: transactionDescription.trim() || null,
+          category_id: transactionCategoryId || null,
+          posted_at: transactionDate,
+          auto_categorized: false,
+        };
 
-      const { error } = await supabase
-        .from("transactions")
-        .update(updatePayload)
-        .eq("id", editTx.id);
-      if (error) {
-        insertError = error;
+        // Flip sign when switching between expense and income
+        if (
+          Number.isFinite(currentAmount) &&
+          oldType && newType && oldType !== newType &&
+          ((oldType === "expense" && newType === "income") ||
+           (oldType === "income" && newType === "expense"))
+        ) {
+          updatePayload.amount = -currentAmount;
+        }
+        if (showHintSection) {
+          updatePayload.reconciliation_hint = reconciliationHint;
+        }
+
+        const { error } = await supabase
+          .from("transactions")
+          .update(updatePayload)
+          .eq("id", editTx.id);
+        if (error) {
+          insertError = error;
+        }
       }
     } else if (isTransfer) {
       const transferId =
@@ -646,45 +816,56 @@ export function TransactionModal() {
               onSubmit={handleCreateTransaction}
             >
               {/* Transaction Type */}
-              {!isEditing && (
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-[var(--muted)]">
-                    Tipo
-                  </label>
-                  <div
-                    role="group"
-                    className="grid grid-cols-3 rounded-xl border border-[var(--border)] bg-slate-50 p-1"
-                  >
-                    {transactionTypeOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => {
-                          setTransactionType(option.value);
-                          setTransactionDestinationAccountId("");
-                          setTransactionCategoryId("");
-                        }}
-                        className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
-                          transactionType === option.value
-                            ? (transactionTypeStyles[option.value]?.active ??
-                              "bg-white text-[var(--accent-strong)] shadow-sm")
-                            : (transactionTypeStyles[option.value]?.inactive ??
-                              "text-[var(--muted)] hover:text-[var(--ink)]")
-                        }`}
-                        aria-pressed={transactionType === option.value}
-                      >
-                        <span className="block truncate">{option.label}</span>
-                      </button>
-                    ))}
+              {(() => {
+                // Editing OFX: only expense/income (no transfer)
+                // Editing manual transfer: type is locked
+                // Creating: all options
+                const editingTransfer = isEditing && editTx?.source === "transfer";
+                if (editingTransfer) return null;
+                const typeOptions = transactionTypeOptions;
+                return (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-[var(--muted)]">
+                      Tipo
+                    </label>
+                    <div
+                      role="group"
+                      className={`grid rounded-xl border border-[var(--border)] bg-slate-50 p-1 ${typeOptions.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}
+                    >
+                      {typeOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            setTransactionType(option.value);
+                            setTransactionDestinationAccountId("");
+                            setTransactionCategoryId("");
+                            setTransferTargetAccountId("");
+                            setTransferCandidates([]);
+                            setSelectedCandidateId("");
+                          }}
+                          className={`min-w-0 rounded-lg px-2 py-2 text-xs font-semibold transition ${
+                            transactionType === option.value
+                              ? (transactionTypeStyles[option.value]?.active ??
+                                "bg-white text-[var(--accent-strong)] shadow-sm")
+                              : (transactionTypeStyles[option.value]?.inactive ??
+                                "text-[var(--muted)] hover:text-[var(--ink)]")
+                          }`}
+                          aria-pressed={transactionType === option.value}
+                        >
+                          <span className="block truncate">{option.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Account & Category/Destination */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-[var(--muted)]">
-                    {isTransfer ? "Conta origem" : "Conta"}
+                    {isTransfer && !isOFXTransferLinking ? "Conta origem" : "Conta"}
                   </label>
                   <div className="relative">
                     <svg
@@ -715,7 +896,41 @@ export function TransactionModal() {
                     </select>
                   </div>
                 </div>
-                {isTransfer ? (
+                {isOFXTransferLinking ? (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-[var(--muted)]">
+                      {transferAccountLabel}
+                    </label>
+                    <div className="relative">
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      >
+                        <path d="M4 12h12" />
+                        <path d="M12 6l6 6-6 6" />
+                      </svg>
+                      <select
+                        value={transferTargetAccountId}
+                        onChange={(event) =>
+                          setTransferTargetAccountId(event.target.value)
+                        }
+                        disabled={isAlreadyLinked}
+                        className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-3 text-sm text-[var(--ink)] shadow-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:bg-slate-50"
+                      >
+                        <option value="">Selecione a conta</option>
+                        {transferTargetAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : isTransfer ? (
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-[var(--muted)]">
                       Conta destino
@@ -791,6 +1006,81 @@ export function TransactionModal() {
                   </div>
                 )}
               </div>
+
+              {/* OFX Transfer: candidate list */}
+              {isOFXTransferLinking && transferTargetAccountId && !isAlreadyLinked ? (
+                <div className="rounded-xl border border-[var(--border)] bg-slate-50 p-3">
+                  <p className="text-xs font-semibold text-[var(--muted)]">
+                    OFX candidatas na conta selecionada
+                  </p>
+                  {isSearchingCandidates ? (
+                    <p className="mt-2 text-xs text-[var(--muted)]">Buscando...</p>
+                  ) : transferCandidates.length === 0 ? (
+                    <p className="mt-2 text-xs text-[var(--muted)]">
+                      Nenhuma OFX correspondente encontrada. Ao salvar, uma contrapartida será criada automaticamente.
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-1">
+                      {transferCandidates.map((candidate) => {
+                        const isSelected = selectedCandidateId === candidate.id;
+                        const formattedAmount = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Math.abs(candidate.amount));
+                        return (
+                          <button
+                            key={candidate.id}
+                            type="button"
+                            onClick={() => setSelectedCandidateId(isSelected ? "" : candidate.id)}
+                            className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${
+                              isSelected
+                                ? "border-sky-300 bg-sky-50 text-sky-700"
+                                : "border-[var(--border)] bg-white text-[var(--ink)] hover:border-sky-200"
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span className="font-semibold">{candidate.description ?? "Sem descrição"}</span>
+                              <span className="ml-2 text-[var(--muted)]">{candidate.posted_at?.slice(0, 10)}</span>
+                            </div>
+                            <span className={`ml-2 shrink-0 font-semibold ${candidate.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                              {candidate.amount >= 0 ? "+" : "-"} {formattedAmount}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {/* OFX Transfer: unlink button */}
+              {isOFXTransferLinking && isAlreadyLinked ? (
+                <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+                  <p className="text-sm text-sky-700">
+                    Esta transação está vinculada como transferência.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={isUnlinking}
+                    onClick={async () => {
+                      if (!editTx?.transfer_linked_id || !editTx?.id) return;
+                      setIsUnlinking(true);
+                      setTransactionError(null);
+                      // Unlink both sides atomically via RPC
+                      const { error: unlinkErr } = await supabase.rpc("unlink_transfer", {
+                        tx_id: editTx.id,
+                      });
+                      setIsUnlinking(false);
+                      if (unlinkErr) {
+                        setTransactionError(unlinkErr.message ?? "Erro ao desvincular");
+                        return;
+                      }
+                      triggerRefresh();
+                      closeTransactionModal();
+                    }}
+                    className="mt-2 rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-60"
+                  >
+                    {isUnlinking ? "Desvinculando..." : "Desvincular transferência"}
+                  </button>
+                </div>
+              ) : null}
 
               {/* Amount & Date */}
               <div className="grid gap-4 sm:grid-cols-2">
