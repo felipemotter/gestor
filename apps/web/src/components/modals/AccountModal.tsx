@@ -120,8 +120,8 @@ export function AccountModal({
       )
     : bankLogoOptions;
 
-  // Handle OFX file to extract bank/account IDs
-  const handleOfxFile = useCallback(async (file: File) => {
+  // Handle OFX file to extract bank/account IDs and optionally fill account details
+  const handleOfxFile = useCallback(async (file: File, fillAllFields: boolean = false) => {
     if (!file.name.toLowerCase().endsWith(".ofx")) {
       setAccountError("Formato inválido. Envie um arquivo .ofx");
       return;
@@ -131,8 +131,42 @@ export function AccountModal({
     try {
       const text = await file.text();
       const parsed = await parseOFX(text);
+
+      // Always fill OFX IDs
       setOfxBankId(parsed.bankId);
       setOfxAccountId(parsed.accountId);
+
+      if (fillAllFields) {
+        // Enable reconcilable
+        setAccountIsReconcilable(true);
+
+        // Suggest account name based on bank
+        if (parsed.bankName) {
+          setAccountName(parsed.bankName);
+        }
+
+        // Try to find matching bank logo
+        const bankNameLower = parsed.bankName.toLowerCase();
+        const matchingLogo = bankLogoOptions.find((opt) => {
+          const labelLower = opt.label.toLowerCase();
+          // Check if bank name contains or is contained in the logo label
+          return labelLower.includes(bankNameLower) || bankNameLower.includes(labelLower.split(" ")[0]);
+        });
+        if (matchingLogo) {
+          setAccountIconKey(matchingLogo.key);
+        }
+
+        // Calculate opening balance: ledgerBalance - sum(transactions)
+        // Opening balance = what the balance was before the first transaction in the statement
+        if (parsed.ledgerBalance !== null && parsed.transactions.length > 0) {
+          const transactionsSum = parsed.transactions.reduce((sum, tx) => sum + tx.amount, 0);
+          const openingBalance = parsed.ledgerBalance - transactionsSum;
+          setAccountOpeningBalance(openingBalance.toFixed(2).replace(".", ","));
+        } else if (parsed.ledgerBalance !== null) {
+          // No transactions, use ledger balance as opening
+          setAccountOpeningBalance(parsed.ledgerBalance.toFixed(2).replace(".", ","));
+        }
+      }
     } catch {
       setAccountError("Erro ao ler arquivo OFX.");
     } finally {
@@ -320,6 +354,51 @@ export function AccountModal({
             className="grid gap-4"
             onSubmit={isEditingAccount ? handleUpdateAccount : handleCreateAccount}
           >
+            {/* Import from OFX banner (only for new accounts) */}
+            {!isEditingAccount && (
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-sky-900">
+                      Criar a partir de extrato
+                    </p>
+                    <p className="mt-0.5 text-xs text-sky-700">
+                      Preenche automaticamente nome, saldo inicial e IDs do banco
+                    </p>
+                  </div>
+                  <label className="relative shrink-0 cursor-pointer">
+                    <span className={`inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-700 shadow-sm transition hover:bg-sky-100 ${isParsingOfx ? "pointer-events-none opacity-60" : ""}`}>
+                      {isParsingOfx ? (
+                        <>
+                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          Lendo...
+                        </>
+                      ) : (
+                        <>
+                          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                          </svg>
+                          Importar OFX
+                        </>
+                      )}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".ofx"
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleOfxFile(file, true);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+
             {/* Account Name */}
             <div className="grid gap-2">
               <label className="text-xs font-semibold text-[var(--muted)]">
