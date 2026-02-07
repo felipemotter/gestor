@@ -54,7 +54,9 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 │       │   ├── ofx-parser.ts        # Parser OFX client-side (usa ofx-js)
 │       │   ├── rule-matcher.ts      # Matching de regras de categorização (funções puras)
 │       │   ├── reconciliation-matcher.ts  # Matching manual↔OFX para reconciliação (autoMatchExact + rankCandidates com tolerâncias)
-│       │   └── balance-checker.ts   # Verificação de divergência saldo sistema vs banco via RPC
+│       │   ├── balance-checker.ts   # Verificação de divergência saldo sistema vs banco via RPC
+│       │   ├── __fixtures__/        # Fixtures OFX para testes (nubank.ofx, viacredi.ofx)
+│       │   └── __tests__/           # Testes unitários Vitest (6 arquivos, 107 testes)
 │       └── types/
 │           ├── index.ts             # Tipos compartilhados
 │           └── ofx-js.d.ts          # Type declarations para ofx-js
@@ -66,11 +68,18 @@ App de controle financeiro familiar com multi-usuarios, permissoes, ingestao de 
 ├── db/
 │   ├── init/001_init.sql       # Schema completo (757 linhas)
 │   ├── seed/demo_data.sql      # Dados demo (usuários, contas, categorias, transações)
-│   └── patches/                # Migrações incrementais
+│   ├── patches/                # Migrações incrementais
+│   └── test/                   # Testes SQL (psql assertions)
+│       ├── run_tests.sh        # Runner de testes SQL
+│       ├── test_account_balance.sql
+│       ├── test_transfer_link.sql
+│       ├── test_triggers.sql
+│       └── test_rpcs.sql
 ├── supabase/                   # Configs do Supabase (kong.yml, SQL de roles/jwt/realtime)
 ├── scripts/
 │   ├── gen_env.py              # Gera .env com JWTs e chaves
 │   └── demo.sh                 # Reset/seed de dados demo
+├── .github/workflows/ci.yml    # CI: lint, test, sql-tests, build
 ├── docker-compose.yml          # Dev
 ├── docker-compose.prod.yml     # Produção
 └── docker-compose.traefik.yml  # TLS/HTTPS
@@ -151,6 +160,14 @@ docker compose up web
 # Lint
 cd apps/web && npm run lint
 
+# Testes unitários (Vitest)
+cd apps/web && npm test              # run once
+cd apps/web && npm run test:watch    # watch mode
+cd apps/web && npm run test:coverage # com cobertura
+
+# Testes SQL (requer docker compose up db)
+bash db/test/run_tests.sh
+
 # Build
 cd apps/web && npm run build
 
@@ -177,6 +194,27 @@ python3 scripts/gen_env.py
 - Studio: http://localhost:3002
 - n8n: http://localhost:5678
 - PostgreSQL: localhost:5433
+
+## Testes
+
+### Unitários (Vitest)
+
+- Framework: Vitest 4 (`apps/web/vitest.config.ts`)
+- 6 test suites em `apps/web/src/lib/__tests__/`: date-utils, formatters, ofx-parser, rule-matcher, reconciliation-matcher, balance-checker
+- Fixtures OFX em `apps/web/src/lib/__fixtures__/`
+- Alias `@/*` configurado no vitest.config.ts
+
+### SQL (psql assertions)
+
+- Runner: `db/test/run_tests.sh` — roda todos os `test_*.sql` em `db/test/`
+- Usa `SET session_replication_role = 'replica'` para bypass de RLS/triggers no setup
+- 4 arquivos: account_balance, transfer_link, triggers, rpcs
+
+### CI (GitHub Actions)
+
+- `.github/workflows/ci.yml` com 4 jobs paralelos: lint-typecheck, unit-tests, sql-tests, build
+- Build depende de lint+tests passarem
+- SQL tests usa `postgres:15` service container com auth schema stub
 
 ## API Routes (Next.js)
 
